@@ -320,15 +320,22 @@ nginx -t
 systemctl reload nginx
 
 echo "==> Attempting Let's Encrypt SSL (DNS A record for ${DOMAIN} must point here)"
+# Only request certs for hostnames that resolve (www often has no DNS yet).
+CERTBOT_DOMAINS=(-d "${DOMAIN}")
+if getent hosts "www.${DOMAIN}" >/dev/null 2>&1 || host "www.${DOMAIN}" >/dev/null 2>&1; then
+  CERTBOT_DOMAINS+=(-d "www.${DOMAIN}")
+else
+  echo "==> Skipping www.${DOMAIN} (no DNS A/AAAA record)"
+fi
 if certbot --nginx \
-    -d "${DOMAIN}" -d "www.${DOMAIN}" \
+    "${CERTBOT_DOMAINS[@]}" \
     --expand \
     --non-interactive --agree-tos -m "${EMAIL}" --redirect; then
   echo "SSL enabled: https://${DOMAIN}"
 else
   echo "WARN: Certbot failed (DNS not ready yet?). Site is on http://${DOMAIN}"
   echo "Later run:"
-  echo "  certbot --nginx --expand -d ${DOMAIN} -d www.${DOMAIN} -m ${EMAIL} --agree-tos --non-interactive --redirect"
+  echo "  certbot --nginx -d ${DOMAIN} -m ${EMAIL} --agree-tos --non-interactive --redirect"
 fi
 
 systemctl restart "${SERVICE_NAME}"
