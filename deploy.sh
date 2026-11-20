@@ -154,8 +154,20 @@ set +a
 
 echo "==> Building React frontend (Vite)"
 cd "${FRONTEND_DIR}"
-npm ci --omit=optional 2>/dev/null || npm install
-npm run build
+# Vite 8 / Rolldown needs platform optional deps (@rolldown/binding-linux-x64-gnu).
+# Never use --omit=optional. Clean install avoids Windows lockfile optional-dep bugs.
+rm -rf node_modules
+if ! npm ci; then
+  echo "==> npm ci failed — refreshing lock + install"
+  rm -rf node_modules package-lock.json
+  npm install
+fi
+if ! npm run build; then
+  echo "==> Build failed — reinstalling deps (Rolldown native binding fix)"
+  rm -rf node_modules package-lock.json
+  npm install
+  npm run build
+fi
 if [[ ! -f "${FRONTEND_DIST}/index.html" ]]; then
   echo "Frontend build failed — missing ${FRONTEND_DIST}/index.html"
   exit 1
