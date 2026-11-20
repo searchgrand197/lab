@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block title %}Tests — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Tests under categories{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="toolbar">
+    <h2 class="panel-title" style="margin:0">Tests</h2>
+    <a class="btn btn-primary" href="{% url 'lab:test_create' %}">Add Test</a>
+  </div>
+
+  {% if not categories %}
+  <p class="empty">Create a <a href="{% url 'lab:categories' %}">category</a> before adding tests.</p>
+  {% endif %}
+
+  {% regroup tests by category as category_list %}
+  {% for group in category_list %}
+  <details class="category-block" open>
+    <summary>{{ group.grouper.name }} <span class="badge">{{ group.list|length }}</span></summary>
+    <div class="table-wrap" style="padding:0.5rem 1rem 1rem">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Test</th>
+            <th>Price</th>
+            <th>Parameters</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for t in group.list %}
+          <tr>
+            <td><strong>{{ t.name }}</strong></td>
+            <td>₹{{ t.price }}</td>
+            <td>{{ t.parameters.count }}</td>
+            <td>{% if t.is_active %}<span class="badge">Active</span>{% else %}Inactive{% endif %}</td>
+            <td style="white-space:nowrap">
+              <a class="btn btn-secondary btn-sm" href="{% url 'lab:test_edit' t.pk %}">Edit</a>
+              <form method="post" action="{% url 'lab:test_delete' t.pk %}" style="display:inline" onsubmit="return confirm('Delete this test?');">
+                {% csrf_token %}
+                <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% empty %}
+  <p class="empty">No tests yet.</p>
+  {% endfor %}
+</div>
+{% endblock %}

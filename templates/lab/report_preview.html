@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+
+{% block title %}Report {{ booking.report_no }} — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Report preview{% endblock %}
+
+{% block content %}
+<div class="form-actions no-print" style="margin-bottom:1rem">
+  <a class="btn btn-primary" href="{% url 'lab:report_pdf' booking.pk %}">Download PDF</a>
+  <button class="btn btn-secondary" type="button" onclick="window.print()">Print</button>
+  <a class="btn btn-secondary" href="{% url 'lab:booking_detail' booking.pk %}">Edit Results</a>
+</div>
+
+<div class="report-sheet">
+  <h1>Khalsa Clinical Laboratory</h1>
+  <p class="sub">Laboratory Investigation Report</p>
+
+  <table class="data" style="margin-bottom:1.25rem">
+    <tr>
+      <th>Report No</th><td>{{ booking.report_no }}</td>
+      <th>Test Date</th><td>{{ booking.test_date|date:"d-m-Y H:i" }}</td>
+    </tr>
+    <tr>
+      <th>Patient</th><td>{{ booking.patient.name }}</td>
+      <th>Age / Gender</th><td>{{ booking.patient.age|default:"—" }} / {{ booking.patient.get_gender_display }}</td>
+    </tr>
+    <tr>
+      <th>Mobile</th><td>{{ booking.patient.mobile|default:"—" }}</td>
+      <th>Referred By</th><td>{{ booking.doctor.name|default:"—" }}</td>
+    </tr>
+  </table>
+
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Investigation</th>
+        <th>Result</th>
+        <th>Unit</th>
+        <th>Reference Range</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for bt in booking.booking_tests.all %}
+      <tr>
+        <td colspan="4"><strong>{{ bt.test.name }}</strong></td>
+      </tr>
+      {% for result in bt.results.all %}
+      <tr>
+        <td style="padding-left:1.25rem">{{ result.parameter.name }}</td>
+        <td>{{ result.value|default:"—" }}</td>
+        <td>{{ result.parameter.unit }}</td>
+        <td>{{ result.parameter.reference_range }}</td>
+      </tr>
+      {% empty %}
+        {% for param in bt.test.parameters.all %}
+        <tr>
+          <td style="padding-left:1.25rem">{{ param.name }}</td>
+          <td>—</td>
+          <td>{{ param.unit }}</td>
+          <td>{{ param.reference_range }}</td>
+        </tr>
+        {% endfor %}
+      {% endfor %}
+      {% empty %}
+      <tr><td colspan="4" class="empty">No tests.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p style="margin-top:2.5rem">__________________________<br>Authorized Signatory</p>
+</div>
+{% endblock %}

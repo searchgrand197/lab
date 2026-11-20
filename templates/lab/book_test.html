@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+
+{% block title %}Book Test — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Register patient and book investigations{% endblock %}
+
+{% block content %}
+<div class="panel book-panel">
+  <div class="toolbar">
+    <h2 class="panel-title" style="margin:0">Book Test</h2>
+    <div class="search-box">
+      <span class="icon">⌕</span>
+      <input
+        id="patient-live-search"
+        type="search"
+        placeholder="Find existing patient…"
+        data-endpoint="{% url 'lab:patient_search_api' %}"
+        data-mode="prefill"
+        autocomplete="off"
+      >
+      <div id="patient-search-results" class="search-results"></div>
+    </div>
+  </div>
+
+  <form method="post" novalidate class="book-form">
+    {% csrf_token %}
+    {{ form.patient_id }}
+
+    {% if form.errors %}
+    <ul class="messages">
+      {% for field, errors in form.errors.items %}
+        {% for error in errors %}
+        <li class="error">{{ field }}: {{ error }}</li>
+        {% endfor %}
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <section class="form-section">
+      <h3 class="section-label">Patient Information</h3>
+      <div class="form-grid">
+        <div class="field span-3">
+          <label for="id_name">Name</label>
+          {{ form.name }}
+        </div>
+        <div class="field span-1">
+          <label for="id_age">Age</label>
+          {{ form.age }}
+        </div>
+        <div class="field span-2">
+          <label>Gender</label>
+          <div class="gender-group">
+            {% for radio in form.gender %}
+              <label>{{ radio.tag }} {{ radio.choice_label }}</label>
+            {% endfor %}
+          </div>
+        </div>
+        <div class="field span-2">
+          <label for="id_mobile">Mobile No</label>
+          {{ form.mobile }}
+        </div>
+        <div class="field span-2">
+          <label for="id_dob">DOB</label>
+          {{ form.dob }}
+        </div>
+        <div class="field span-2">
+          <label for="id_doctor">Ref By (Doctor)</label>
+          {{ form.doctor }}
+        </div>
+        <div class="field span-2">
+          <label for="id_referral_source">Referral Source</label>
+          {{ form.referral_source }}
+        </div>
+        <div class="field span-2">
+          <label for="id_remarks">Remarks</label>
+          {{ form.remarks }}
+        </div>
+      </div>
+    </section>
+
+    <section class="form-section">
+      <h3 class="section-label">Sample & Report Details</h3>
+      <div class="form-grid">
+        <div class="field span-2">
+          <label for="id_room_no">Room No</label>
+          {{ form.room_no }}
+        </div>
+        <div class="field span-2">
+          <label for="id_report_no">Report No</label>
+          {{ form.report_no }}
+        </div>
+        <div class="field span-2">
+          <label for="id_test_date">Test Date</label>
+          {{ form.test_date }}
+        </div>
+        <div class="field span-2">
+          <label for="id_next_due_date">Next Due Date</label>
+          {{ form.next_due_date }}
+        </div>
+        <div class="field span-2">
+          <label for="id_sample_collected_at">Sample Collection</label>
+          {{ form.sample_collected_at }}
+        </div>
+        <div class="field span-2">
+          <label for="id_sample_received_at">Sample Received</label>
+          {{ form.sample_received_at }}
+        </div>
+        <div class="field span-2">
+          <label for="id_report_ready_at">Report Ready</label>
+          {{ form.report_ready_at }}
+        </div>
+        <div class="field span-2">
+          <label for="id_sample_collected_by">Sample Collected By</label>
+          {{ form.sample_collected_by }}
+        </div>
+        <div class="field span-2">
+          <label for="id_sample_delivered_to">Sample Delivered To</label>
+          {{ form.sample_delivered_to }}
+        </div>
+      </div>
+    </section>
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Continue to Report</button>
+      <a class="btn btn-secondary" href="{% url 'lab:patients' %}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

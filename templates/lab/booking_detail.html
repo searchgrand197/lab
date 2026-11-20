@@ -1,0 +1,69 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ booking.report_no }} — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Enter results · {{ booking.patient.name }}{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="toolbar">
+    <div>
+      <h2 class="panel-title" style="margin:0">{{ booking.report_no }}</h2>
+      <p style="margin:0.25rem 0 0;color:var(--slate-500)">
+        {{ booking.patient.name }} · {{ booking.patient.get_gender_display }} · Age {{ booking.patient.age|default:"—" }}
+        · Ref: {{ booking.doctor.name|default:"—" }}
+      </p>
+    </div>
+    <div style="display:flex;gap:0.5rem;flex-wrap:wrap">
+      <a class="btn btn-secondary" href="{% url 'lab:report_preview' booking.pk %}">Preview</a>
+      <a class="btn btn-primary" href="{% url 'lab:report_pdf' booking.pk %}">Download PDF</a>
+    </div>
+  </div>
+
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_results">
+
+    <div class="field" style="max-width:240px">
+      <label for="status">Status</label>
+      <select class="field-input" name="status" id="status">
+        {% for value, label in booking.STATUS_CHOICES %}
+        <option value="{{ value }}" {% if booking.status == value %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    {% for bt in booking.booking_tests.all %}
+    <div class="result-section">
+      <h3>{{ bt.test.name }} <span class="badge">{{ bt.test.category.name }}</span></h3>
+      <div class="body">
+        {% for result in bt.results.all %}
+        <div class="grid-3" style="align-items:end">
+          <div class="field">
+            <label>{{ result.parameter.name }}</label>
+            <input class="field-input" type="text" name="result_{{ result.id }}" value="{{ result.value }}" placeholder="Result value">
+          </div>
+          <div class="field">
+            <label>Unit</label>
+            <input class="field-input" type="text" value="{{ result.parameter.unit }}" disabled>
+          </div>
+          <div class="field">
+            <label>Reference</label>
+            <input class="field-input" type="text" value="{{ result.parameter.reference_range }}" disabled>
+          </div>
+        </div>
+        {% empty %}
+        <p class="empty">No parameters configured for this test.</p>
+        {% endfor %}
+      </div>
+    </div>
+    {% empty %}
+    <p class="empty">No tests on this booking.</p>
+    {% endfor %}
+
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save Results</button>
+      <a class="btn btn-secondary" href="{% url 'lab:reports' %}">Back to Reports</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

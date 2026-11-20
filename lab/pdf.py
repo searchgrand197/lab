@@ -1,0 +1,716 @@
+from io import BytesIO
+import re
+from datetime import datetime
+from pathlib import Path
+
+from django.conf import settings
+from django.utils import timezone
+from reportlab.graphics.barcode import code128, qr
+from reportlab.graphics.shapes import Drawing
+from reportlab.lib import colors
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas as pdfcanvas
+from reportlab.platypus import (
+    HRFlowable,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+from .models import PrintSettings
+
+
+class ActualSizeCanvas(pdfcanvas.Canvas):
+    """Ask PDF viewers / drivers to print at 100% (no fit-to-page scaling)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Honoured by Adobe Reader, Edge, and many Windows print paths.
+        self.setViewerPreference('PrintScaling', 'None')
+
+
+# Pure B/W palette — colour printers are fine; mono printers stay crisp.
+INK = colors.black
+MUTED = colors.HexColor('#222222')
+LINE = colors.black
+HEADER_BG = colors.white
+GREEN = INK  # kept for any legacy refs; print uses black
+RED = INK
+
+
+A4_W_MM = 210.0
+A4_H_MM = 297.0
+
+
+def _print_layout():
+    """
+    Settings define the printable plate (width × height from top-left).
+    PDF media is always A4 so printers don't scale; content is clipped to
+    that plate starting at the top-left corner of the A4 page.
+    """
+    cfg = PrintSettings.load()
+    if cfg.page_preset != 'Custom':
+        cfg.apply_preset_size()
+
+    plate_w_mm = float(cfg.page_width_mm)
+    plate_h_mm = float(cfg.page_height_mm)
+    # Never larger than A4 — overflow would leave the printer page.
+    plate_w_mm = min(max(plate_w_mm, 80.0), A4_W_MM)
+    plate_h_mm = min(max(plate_h_mm, 80.0), A4_H_MM)
+
+    media_w = A4_W_MM * mm
+    media_h = A4_H_MM * mm
+    plate_w = plate_w_mm * mm
+    plate_h = plate_h_mm * mm
+
+    left = float(cfg.margin_left_mm) * mm
+    right_in_plate = float(cfg.margin_right_mm) * mm
+    header_h = float(cfg.header_height_mm) * mm
+    footer_h = float(cfg.footer_height_mm) * mm
+
+    # Frame sits inside the top-left plate; unused A4 area stays blank.
+    # rightMargin is measured from the A4 right edge.
+    right = media_w - plate_w + right_in_plate
+    # bottomMargin is measured from the A4 bottom edge.
+    bottom = media_h - plate_h + footer_h
+    top = header_h
+
+    content_w = max(plate_w - left - right_in_plate, 60 * mm)
+    return {
+        'cfg': cfg,
+        'pagesize': (media_w, media_h),
+        'left': left,
+        'right': right,
+        'right_in_plate': right_in_plate,
+        'header_h': header_h,
+        'footer_h': footer_h,
+        'bottom': bottom,
+        'top': top,
+        'content_w': content_w,
+        'page_w': media_w,
+        'page_h': media_h,
+        'plate_w': plate_w,
+        'plate_h': plate_h,
+        'plate_w_mm': plate_w_mm,
+        'plate_h_mm': plate_h_mm,
+    }
+
+
+def _detect_lan_ip():
+    """Best-effort LAN IP so phone QR codes do not use localhost."""
+    import socket
+
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(('8.8.8.8', 80))
+        ip = sock.getsockname()[0]
+        sock.close()
+        if ip and not ip.startswith('127.'):
+            return ip
+    except OSError:
+        pass
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            ip = info[4][0]
+            if ip and not ip.startswith('127.'):
+                return ip
+    except OSError:
+        pass
+    return ''
+
+
+def _publicize_base_url(base):
+    """Rewrite localhost / Vite proxy hosts to a phone-reachable LAN URL."""
+    from urllib.parse import urlparse
+
+    base = str(base or '').strip().rstrip('/')
+    if not base:
+        lan = _detect_lan_ip()
+        return f'http://{lan}:8000' if lan else ''
+
+    if ':5173' in base:
+        base = base.replace(':5173', ':8000')
+
+    parsed = urlparse(base if '://' in base else f'http://{base}')
+    host = (parsed.hostname or '').lower()
+    if host in ('localhost', '127.0.0.1', '0.0.0.0', '::1'):
+        lan = _detect_lan_ip()
+        if lan:
+            port = parsed.port or 8000
+            scheme = parsed.scheme or 'http'
+            return f'{scheme}://{lan}:{port}'
+    return base.rstrip('/')
+
+
+def resolve_public_base_url(fallback=''):
+    cfg = PrintSettings.load()
+    configured = (cfg.public_base_url or '').strip().rstrip('/')
+    if configured:
+        return _publicize_base_url(configured)
+
+    from django.conf import settings as dj_settings
+
+    env_base = getattr(dj_settings, 'PUBLIC_BASE_URL', '') or ''
+    env_base = str(env_base).strip().rstrip('/')
+    if env_base:
+        return _publicize_base_url(env_base)
+
+    return _publicize_base_url(fallback)
+
+
+def report_share_url(booking, public_base_url=''):
+    if not booking.share_token:
+        booking.share_token = __import__('uuid').uuid4()
+        booking.save(update_fields=['share_token'])
+    base = resolve_public_base_url(public_base_url)
+    # Open the mobile viewer page (shows full pages including letterhead background).
+    path = f'/r/{booking.share_token}/'
+    if base:
+        return f'{base}{path}'
+    return path
+
+
+def build_report_pdf(booking, public_base_url=None, include_background=True):
+    layout = _print_layout()
+    cfg = layout['cfg']
+    page_w = layout['page_w']
+    page_h = layout['page_h']
+    content_w = layout['content_w']
+    draw_background = bool(include_background)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=layout['pagesize'],
+        leftMargin=layout['left'],
+        rightMargin=layout['right'],
+        topMargin=layout['top'],
+        bottomMargin=layout['bottom'],
+        title=f'Report {booking.report_no}',
+    )
+
+    styles = getSampleStyleSheet()
+    lab_title = ParagraphStyle(
+        'LabTitle',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=16,
+        textColor=INK,
+        alignment=1,
+        spaceAfter=1,
+    )
+    lab_sub = ParagraphStyle(
+        'LabSub',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=INK,
+        alignment=1,
+        spaceAfter=8,
+    )
+    meta_label = ParagraphStyle(
+        'MetaLabel',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=INK,
+        leading=12,
+    )
+    col_head = ParagraphStyle(
+        'ColHead',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        textColor=INK,
+        leading=12,
+    )
+    test_head = ParagraphStyle(
+        'TestHead',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10.5,
+        textColor=INK,
+        leading=13,
+        spaceBefore=2,
+        spaceAfter=1,
+    )
+    param_name = ParagraphStyle(
+        'ParamName',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=INK,
+        leading=11,
+    )
+    param_name_alert = ParagraphStyle(
+        'ParamNameAlert',
+        parent=param_name,
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+    )
+    result_normal = ParagraphStyle(
+        'ResultNormal',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9.5,
+        textColor=INK,
+        alignment=1,
+        leading=12,
+    )
+    result_in = ParagraphStyle(
+        'ResultIn',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=9.5,
+        textColor=INK,
+        alignment=1,
+        leading=12,
+    )
+    result_out = ParagraphStyle(
+        'ResultOut',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=11,
+        textColor=INK,
+        alignment=1,
+        leading=13,
+    )
+    unit_style = ParagraphStyle(
+        'Unit',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8.5,
+        textColor=INK,
+        alignment=1,
+        leading=11,
+    )
+    range_style = ParagraphStyle(
+        'Range',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8.5,
+        textColor=INK,
+        alignment=2,
+        leading=11,
+    )
+    range_head = ParagraphStyle(
+        'RangeHead',
+        parent=col_head,
+        alignment=2,
+    )
+    end_style = ParagraphStyle(
+        'End',
+        parent=styles['Normal'],
+        fontName='Helvetica-Bold',
+        fontSize=10,
+        textColor=INK,
+        alignment=1,
+        spaceBefore=14,
+        spaceAfter=10,
+    )
+    sign_style = ParagraphStyle(
+        'Sign',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=9,
+        textColor=INK,
+        alignment=2,
+        leading=12,
+    )
+    foot = ParagraphStyle(
+        'Foot',
+        parent=styles['Normal'],
+        fontName='Helvetica-Oblique',
+        fontSize=8,
+        textColor=MUTED,
+        alignment=1,
+    )
+
+    patient = booking.patient
+    doctor_name = f'Dr. {booking.doctor.name}' if booking.doctor else '—'
+    gender = patient.get_gender_display()
+    age_gender = f'{patient.age if patient.age is not None else ""}/{gender}'
+    now = timezone.localtime()
+
+    story = []
+    lab_name = getattr(settings, 'LAB_NAME', 'Khalsa Clinical Laboratory')
+    if cfg.show_lab_title:
+        story.append(Paragraph(lab_name, lab_title))
+        story.append(Paragraph('Laboratory Investigation Report', lab_sub))
+
+    if cfg.show_patient_header:
+        barcode_value = (booking.report_no or str(booking.id)).replace('-', '')
+        barcode = code128.Code128(barcode_value, barHeight=10 * mm, barWidth=0.75, humanReadable=0)
+        share_url = report_share_url(booking, public_base_url=public_base_url or '')
+        qr_widget = qr.QrCodeWidget(share_url)
+        qr_bounds = qr_widget.getBounds()
+        qr_w = qr_bounds[2] - qr_bounds[0]
+        qr_h = qr_bounds[3] - qr_bounds[1]
+        qr_size = min(28 * mm, content_w * 0.16)
+        qr_drawing = Drawing(qr_size, qr_size, transform=[qr_size / qr_w, 0, 0, qr_size / qr_h, 0, 0])
+        qr_drawing.add(qr_widget)
+
+        left_w = content_w * 0.38
+        mid_w = content_w * 0.42
+        right_w = content_w - left_w - mid_w
+
+        left_meta = [
+            [Paragraph('Name', meta_label), Paragraph(f':  <b>{patient.display_name}</b>', meta_label)],
+            [Paragraph('Age/Gender', meta_label), Paragraph(f':  {age_gender}', meta_label)],
+            [Paragraph('Referred By', meta_label), Paragraph(f':  {doctor_name}', meta_label)],
+            [Paragraph('Report ID', meta_label), Paragraph(f':  {booking.report_no or "—"}', meta_label)],
+        ]
+        left_table = Table(left_meta, colWidths=[left_w * 0.38, left_w * 0.62])
+        left_table.setStyle(
+            TableStyle(
+                [
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                    ('TOPPADDING', (0, 0), (-1, -1), 2),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]
+            )
+        )
+
+        mid_meta = [
+            [barcode],
+            [Paragraph(f'<b>Regt. Date</b> : {_fmt_date(booking.test_date or booking.created_at)}', meta_label)],
+            [Paragraph(f'<b>Rec. Date</b> : {_fmt_dt(booking.sample_received_at)}', meta_label)],
+            [Paragraph(f'<b>Report Date</b> : {_fmt_dt(booking.report_ready_at)}', meta_label)],
+            [Paragraph(f'<b>Print On</b> : {_fmt_dt(now)}', meta_label)],
+        ]
+        mid_table = Table(mid_meta, colWidths=[mid_w])
+        mid_table.setStyle(
+            TableStyle(
+                [
+                    ('ALIGN', (0, 0), (0, 0), 'CENTER'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                    ('TOPPADDING', (0, 0), (-1, -1), 1),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 1),
+                ]
+            )
+        )
+
+        header = Table(
+            [[left_table, mid_table, qr_drawing]],
+            colWidths=[left_w, mid_w, right_w],
+        )
+        header.setStyle(
+            TableStyle(
+                [
+                    ('BOX', (0, 0), (-1, -1), 1.25, LINE),
+                    ('LINEAFTER', (0, 0), (0, 0), 1, LINE),
+                    ('LINEAFTER', (1, 0), (1, 0), 1, LINE),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 6),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+                    ('TOPPADDING', (0, 0), (-1, -1), 6),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                    ('BACKGROUND', (0, 0), (-1, -1), HEADER_BG),
+                ]
+            )
+        )
+        story.append(header)
+        story.append(Spacer(1, 8))
+
+    rows = [
+        [
+            Paragraph('Test Description', col_head),
+            Paragraph('Result', col_head),
+            Paragraph('Unit', col_head),
+            Paragraph('Reference Range', range_head),
+        ]
+    ]
+    style_cmds = [
+        ('LINEBELOW', (0, 0), (-1, 0), 1.25, LINE),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+        ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+        ('ALIGN', (1, 0), (2, 0), 'CENTER'),
+        ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+    ]
+
+    booking_tests = list(
+        booking.booking_tests.select_related('test__category').prefetch_related(
+            'results__parameter',
+            'test__parameters',
+        )
+    )
+
+    for bt in booking_tests:
+        filled_results = [
+            result
+            for result in bt.results.all()
+            if (result.value or '').strip()
+        ]
+        if not filled_results:
+            continue
+
+        rows.append(
+            [
+                Paragraph(bt.test.name.upper(), test_head),
+                '',
+                '',
+                '',
+            ]
+        )
+        header_row = len(rows) - 1
+        style_cmds.append(('SPAN', (0, header_row), (-1, header_row)))
+        style_cmds.append(('TOPPADDING', (0, header_row), (-1, header_row), 8))
+        style_cmds.append(('LINEBELOW', (0, header_row), (-1, header_row), 0.8, LINE))
+
+        for result in filled_results:
+            param = result.parameter
+            value = (result.value or '').strip()
+            display_value = _format_indian_number(value)
+            state = evaluate_result_range(value, param.reference_range)
+            # B/W-safe flags: underline + H/L (no colour / asterisks).
+            if state == 'high':
+                result_para = Paragraph(
+                    f'<b><u>{display_value}</u>&nbsp;&nbsp;H</b>',
+                    result_out,
+                )
+            elif state == 'low':
+                result_para = Paragraph(
+                    f'<b><u>{display_value}</u>&nbsp;&nbsp;L</b>',
+                    result_out,
+                )
+            elif state == 'in':
+                result_para = Paragraph(f'<b>{display_value}</b>', result_in)
+            else:
+                result_para = Paragraph(display_value, result_normal)
+
+            name_style = param_name_alert if state in ('high', 'low') else param_name
+            rows.append(
+                [
+                    Paragraph(param.name.upper(), name_style),
+                    result_para,
+                    Paragraph((param.unit or '').upper(), unit_style),
+                    Paragraph(param.reference_range or '', range_style),
+                ]
+            )
+
+    col_desc = content_w * 0.48
+    col_result = content_w * 0.15
+    col_unit = content_w * 0.14
+    col_range = content_w - col_desc - col_result - col_unit
+    result_table = Table(
+        rows,
+        colWidths=[col_desc, col_result, col_unit, col_range],
+        repeatRows=1,
+    )
+    result_table.setStyle(TableStyle(style_cmds))
+    story.append(result_table)
+
+    legend = ParagraphStyle(
+        'Legend',
+        parent=styles['Normal'],
+        fontName='Helvetica',
+        fontSize=8,
+        textColor=INK,
+        alignment=0,
+        spaceBefore=8,
+        leading=11,
+    )
+    story.append(
+        Paragraph(
+            '<b>Key:</b>  <b>H</b> = High (above range) &nbsp;&nbsp; '
+            '<b>L</b> = Low (below range) &nbsp;&nbsp; '
+            'Abnormal results are underlined.',
+            legend,
+        )
+    )
+    story.append(Paragraph('**** END OF REPORT ****', end_style))
+    story.append(HRFlowable(width='100%', thickness=1, color=LINE, spaceBefore=4, spaceAfter=16))
+    story.append(Paragraph('____________________________', sign_style))
+    story.append(Paragraph('Authorized Signatory', sign_style))
+    story.append(Spacer(1, 10))
+    story.append(
+        Paragraph(
+            'This is a computer-generated report from Khalsa Clinical Laboratory.',
+            foot,
+        )
+    )
+
+    bg_path = ''
+    if draw_background and cfg.background_image:
+        try:
+            bg_path = cfg.background_image.path
+        except ValueError:
+            bg_path = ''
+
+    plate_w = layout['plate_w']
+    plate_h = layout['plate_h']
+    # Plate origin: top-left of A4 → PDF y = media_h - plate_h
+    plate_y = page_h - plate_h
+
+    def _page_chrome(canvas, doc_):
+        canvas.saveState()
+        # Letterhead only inside the settings plate (top-left), never stretched to full A4.
+        if bg_path and Path(bg_path).exists():
+            canvas.drawImage(
+                bg_path,
+                0,
+                plate_y,
+                width=plate_w,
+                height=plate_h,
+                preserveAspectRatio=False,
+                mask='auto',
+            )
+
+        # Footer chrome inside the plate footer band.
+        footer_y = plate_y + max(4 * mm, layout['footer_h'] * 0.35)
+        plate_right = plate_w - layout['right_in_plate']
+        canvas.setFont('Helvetica', 8)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(layout['left'], footer_y, f'{booking.report_no or ""} · {patient.display_name}')
+        canvas.drawRightString(plate_right, footer_y, f'Page {doc_.page}')
+
+        if doc_.page > 1 and layout['header_h'] >= 8 * mm:
+            canvas.setStrokeColor(LINE)
+            canvas.setLineWidth(0.6)
+            y = page_h - layout['header_h'] + 2 * mm
+            canvas.line(layout['left'], y, plate_right, y)
+            canvas.setFillColor(INK)
+            canvas.setFont('Helvetica-Bold', 9)
+            canvas.drawString(layout['left'], y + 3 * mm, patient.display_name)
+            canvas.setFont('Helvetica', 8)
+            canvas.drawRightString(
+                plate_right,
+                y + 3 * mm,
+                f'{booking.report_no or ""} · {age_gender}',
+            )
+        canvas.restoreState()
+
+    doc.build(
+        story,
+        onFirstPage=_page_chrome,
+        onLaterPages=_page_chrome,
+        canvasmaker=ActualSizeCanvas,
+    )
+    pdf = buffer.getvalue()
+    buffer.close()
+    return pdf
+
+
+def evaluate_result_range(value, reference_range):
+    """Return 'in' | 'high' | 'low' | None when range cannot be compared."""
+    num = _parse_number(value)
+    if num is None:
+        return None
+    range_text = str(reference_range or '').strip()
+    if not range_text:
+        return None
+
+    between = re.search(r'(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)', range_text, re.I)
+    if between:
+        low = _parse_number(between.group(1))
+        high = _parse_number(between.group(2))
+        if low is None or high is None:
+            return None
+        lo = min(low, high)
+        hi = max(low, high)
+        if num < lo:
+            return 'low'
+        if num > hi:
+            return 'high'
+        return 'in'
+
+    less = re.search(r'[<≤]\s*(-?\d+(?:\.\d+)?)', range_text)
+    if less:
+        limit = _parse_number(less.group(1))
+        if limit is None:
+            return None
+        return 'in' if num < limit else 'high'
+
+    greater_eq = re.search(r'≥\s*(-?\d+(?:\.\d+)?)', range_text)
+    if greater_eq:
+        limit = _parse_number(greater_eq.group(1))
+        if limit is None:
+            return None
+        return 'in' if num >= limit else 'low'
+
+    greater = re.search(r'>\s*(-?\d+(?:\.\d+)?)', range_text)
+    if greater:
+        limit = _parse_number(greater.group(1))
+        if limit is None:
+            return None
+        return 'in' if num > limit else 'low'
+
+    upto = re.search(r'(?:upto|up to)\s*(-?\d+(?:\.\d+)?)', range_text, re.I)
+    if upto:
+        limit = _parse_number(upto.group(1))
+        if limit is None:
+            return None
+        return 'in' if num <= limit else 'high'
+
+    return None
+
+
+def _parse_number(raw):
+    if raw is None or raw == '':
+        return None
+    cleaned = str(raw).replace(',', '').strip()
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _format_indian_number(raw):
+    """Format numeric results in Indian style: 198000 → 1,98,000."""
+    if raw is None:
+        return ''
+    text = str(raw).strip()
+    if not text:
+        return ''
+    cleaned = text.replace(',', '')
+    match = re.fullmatch(r'(-?)(\d+)(?:\.(\d+))?', cleaned)
+    if not match:
+        return text
+
+    sign, int_part, dec_part = match.group(1), match.group(2), match.group(3)
+    int_part = int_part.lstrip('0') or '0'
+    if len(int_part) <= 3:
+        formatted = int_part
+    else:
+        last3 = int_part[-3:]
+        rest = int_part[:-3]
+        groups = []
+        while len(rest) > 2:
+            groups.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            groups.insert(0, rest)
+        formatted = ','.join(groups) + ',' + last3
+    if dec_part is not None:
+        formatted = f'{formatted}.{dec_part}'
+    return f'{sign}{formatted}'
+
+
+def _fmt_dt(value):
+    if not value:
+        return '—'
+    if timezone.is_aware(value):
+        value = timezone.localtime(value)
+    return value.strftime('%d/%m/%Y %I:%M %p')
+
+
+def _fmt_date(value):
+    if not value:
+        return '—'
+    if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            value = timezone.localtime(value)
+        return value.strftime('%d/%m/%Y')
+    return value.strftime('%d/%m/%Y')

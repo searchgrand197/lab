@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ title }} — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}{{ title }}{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <h2 class="panel-title">{{ title }}</h2>
+  <form method="post">
+    {% csrf_token %}
+    <div class="grid-2">
+      <div>
+        {% for field in form %}
+          {% if field.name != 'is_active' %}
+          <div class="field">
+            <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+            {{ field }}
+            {{ field.errors }}
+          </div>
+          {% else %}
+          <div class="field" style="flex-direction:row;align-items:center;gap:0.5rem;">
+            {{ field }} <label for="{{ field.id_for_label }}">Active</label>
+          </div>
+          {% endif %}
+        {% endfor %}
+      </div>
+      <div>
+        <h3 class="panel-title">Parameters</h3>
+        <p style="color:var(--slate-500);margin-top:-0.5rem;font-size:0.9rem">Each parameter becomes a result line on the report.</p>
+        {{ formset.management_form }}
+        {% for f in formset %}
+        <div class="param-row">
+          {% for hidden in f.hidden_fields %}{{ hidden }}{% endfor %}
+          <div>{{ f.name }}</div>
+          <div>{{ f.unit }}</div>
+          <div>{{ f.reference_range }}</div>
+          <div>{{ f.sort_order }}</div>
+          <div>{% if f.DELETE %}{{ f.DELETE }} <span style="font-size:0.8rem">Delete</span>{% endif %}</div>
+          {% if f.errors %}<div style="grid-column:1/-1;color:var(--danger);font-size:0.85rem">{{ f.errors }}</div>{% endif %}
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save Test</button>
+      <a class="btn btn-secondary" href="{% url 'lab:tests' %}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

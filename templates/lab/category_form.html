@@ -1,0 +1,24 @@
+{% extends 'base.html' %}
+
+{% block title %}Edit Category — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Edit category{% endblock %}
+
+{% block content %}
+<div class="panel" style="max-width:520px">
+  <h2 class="panel-title">Edit Category</h2>
+  <form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="field">
+      <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+      {{ field }}
+      {{ field.errors }}
+    </div>
+    {% endfor %}
+    <div class="form-actions">
+      <button class="btn btn-primary" type="submit">Save</button>
+      <a class="btn btn-secondary" href="{% url 'lab:categories' %}">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

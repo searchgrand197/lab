@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}Doctors — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Referring doctors{% endblock %}
+
+{% block content %}
+<div class="grid-2">
+  <div class="panel">
+    <div class="toolbar">
+      <h2 class="panel-title" style="margin:0">Doctors</h2>
+      <a class="btn btn-primary" href="{% url 'lab:doctor_create' %}">Add Doctor</a>
+    </div>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Specialization</th>
+            <th>Phone</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in doctors %}
+          <tr>
+            <td><strong>{{ d.name }}</strong></td>
+            <td>{{ d.specialization|default:"—" }}</td>
+            <td>{{ d.phone|default:"—" }}</td>
+            <td>{% if d.is_active %}<span class="badge">Active</span>{% else %}<span class="badge">Inactive</span>{% endif %}</td>
+            <td style="white-space:nowrap">
+              <a class="btn btn-secondary btn-sm" href="{% url 'lab:doctor_edit' d.pk %}">Edit</a>
+              <form method="post" action="{% url 'lab:doctor_delete' d.pk %}" style="display:inline" onsubmit="return confirm('Delete this doctor?');">
+                {% csrf_token %}
+                <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="5" class="empty">No doctors yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Quick Add</h2>
+    <form method="post" action="{% url 'lab:doctor_create' %}">
+      {% csrf_token %}
+      {% for field in form %}
+        {% if field.name != 'is_active' %}
+        <div class="field">
+          <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+          {{ field }}
+        </div>
+        {% else %}
+        <div class="field" style="flex-direction:row;align-items:center;gap:0.5rem;">
+          {{ field }} <label for="{{ field.id_for_label }}">Active</label>
+        </div>
+        {% endif %}
+      {% endfor %}
+      <button class="btn btn-primary" type="submit">Add Doctor</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block title %}Patients — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}All patients · search and book tests{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="toolbar">
+    <div class="search-box">
+      <span class="icon">⌕</span>
+      <input
+        id="patient-live-search"
+        type="search"
+        placeholder="Search by name or mobile…"
+        value="{{ q }}"
+        data-endpoint="{% url 'lab:patient_search_api' %}"
+        data-mode="navigate"
+        autocomplete="off"
+      >
+      <div id="patient-search-results" class="search-results"></div>
+    </div>
+    <a class="btn btn-primary" href="{% url 'lab:book_test' %}">Book New Test</a>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Age</th>
+          <th>Gender</th>
+          <th>Mobile</th>
+          <th>Updated</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in patients %}
+        <tr>
+          <td><strong>{{ p.name }}</strong></td>
+          <td>{{ p.age|default:"—" }}</td>
+          <td>{{ p.get_gender_display }}</td>
+          <td>{{ p.mobile|default:"—" }}</td>
+          <td>{{ p.updated_at|date:"d M Y H:i" }}</td>
+          <td><a class="btn btn-secondary btn-sm" href="{% url 'lab:book_test' %}?patient={{ p.id }}">Book Test</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="empty">No patients yet. Book a test to register the first patient.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

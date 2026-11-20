@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block title %}Categories — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Test categories{% endblock %}
+
+{% block content %}
+<div class="grid-2">
+  <div class="panel">
+    <h2 class="panel-title">Categories</h2>
+    <div class="table-wrap">
+      <table class="data">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Tests</th>
+            <th>Description</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in categories %}
+          <tr>
+            <td><strong>{{ c.name }}</strong></td>
+            <td><span class="badge">{{ c.tests.count }}</span></td>
+            <td>{{ c.description|default:"—"|truncatechars:60 }}</td>
+            <td style="white-space:nowrap">
+              <a class="btn btn-secondary btn-sm" href="{% url 'lab:category_edit' c.pk %}">Edit</a>
+              <a class="btn btn-secondary btn-sm" href="{% url 'lab:test_create' %}?category={{ c.pk }}">Add Test</a>
+              <form method="post" action="{% url 'lab:category_delete' c.pk %}" style="display:inline" onsubmit="return confirm('Delete category and its tests?');">
+                {% csrf_token %}
+                <button class="btn btn-danger btn-sm" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="4" class="empty">No categories yet. Create one to start adding tests.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2 class="panel-title">Add Category</h2>
+    <form method="post" action="{% url 'lab:category_create' %}">
+      {% csrf_token %}
+      {% for field in form %}
+      <div class="field">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+      </div>
+      {% endfor %}
+      <button class="btn btn-primary" type="submit">Add Category</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

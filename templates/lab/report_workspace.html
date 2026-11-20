@@ -1,0 +1,168 @@
+{% extends 'base.html' %}
+
+{% block title %}Report {{ booking.report_no }} — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Report popup{% endblock %}
+{% block content_class %}has-modal{% endblock %}
+{% block messages_class %}is-hidden{% endblock %}
+
+{% block content %}
+<div class="modal-overlay is-open" id="report-modal" role="dialog" aria-modal="true" aria-labelledby="report-modal-title">
+  <div class="modal-window report-modal-window">
+    <header class="modal-titlebar">
+      <div>
+        <h2 id="report-modal-title">Report Entry</h2>
+        <p>{{ booking.report_no }} · {{ booking.patient.name }} · Age {{ booking.patient.age|default:"—" }} · {{ booking.patient.get_gender_display }}</p>
+      </div>
+      <div class="modal-titlebar-actions">
+        <a class="btn btn-secondary btn-sm" href="{% url 'lab:report_preview' booking.pk %}" target="_blank">Preview</a>
+        <a class="btn btn-primary btn-sm" href="{% url 'lab:report_pdf' booking.pk %}" target="_blank">PDF</a>
+        <a class="modal-close" href="{% url 'lab:book_test' %}" title="Close" aria-label="Close">&times;</a>
+      </div>
+    </header>
+
+    {% if messages %}
+    <ul class="messages modal-messages">
+      {% for message in messages %}
+      <li class="{% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <div class="modal-body workspace-shell">
+      <aside class="workspace-tests">
+        <div class="workspace-tests-head">
+          <h3>All Tests</h3>
+          <input type="search" id="workspace-test-filter" class="field-input" placeholder="Filter tests…">
+        </div>
+        <div class="workspace-tests-list">
+          {% for category in categories %}
+          <details class="workspace-cat" open>
+            <summary>{{ category.name }}</summary>
+            <ul>
+              {% for test in category.tests.all %}
+                {% if test.is_active %}
+                <li>
+                  <a
+                    href="{% url 'lab:report_workspace' booking.pk %}?test={{ test.id }}"
+                    class="workspace-test-link {% if active_test and active_test.id == test.id %}active{% endif %} {% if test.id in selected_ids %}selected{% endif %}"
+                    data-name="{{ test.name|lower }}"
+                  >
+                    <span class="dot"></span>
+                    <span class="label">{{ test.name }}</span>
+                    {% if test.id in selected_ids %}<span class="pill">On report</span>{% endif %}
+                  </a>
+                </li>
+                {% endif %}
+              {% empty %}
+              <li class="empty-mini">No tests</li>
+              {% endfor %}
+            </ul>
+          </details>
+          {% empty %}
+          <p class="empty">No categories/tests found.</p>
+          {% endfor %}
+        </div>
+      </aside>
+
+      <section class="workspace-editor">
+        {% if not active_test %}
+        <div class="workspace-empty">
+          <h3>Choose a test</h3>
+          <p>Select a test from the left to fill Result, Unit, and Range.</p>
+        </div>
+        {% else %}
+        <div class="workspace-editor-head">
+          <div>
+            <h3>{{ active_test.name }}</h3>
+            <p>{{ active_test.category.name }} · ₹{{ active_test.price }}</p>
+          </div>
+        </div>
+
+        <form method="post" class="workspace-form">
+          {% csrf_token %}
+          <input type="hidden" name="test_id" value="{{ active_test.id }}">
+
+          <div class="field status-field">
+            <label for="status">Status</label>
+            <select class="field-input" name="status" id="status">
+              {% for value, label in booking.STATUS_CHOICES %}
+              <option value="{{ value }}" {% if booking.status == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div class="table-wrap modal-table-wrap">
+            <table class="data result-entry-table">
+              <thead>
+                <tr>
+                  <th style="width:40%">Test Name</th>
+                  <th style="width:22%">Result</th>
+                  <th style="width:14%">Unit</th>
+                  <th style="width:24%">Range</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% if booking_test %}
+                  {% for result in booking_test.results.all %}
+                  <tr>
+                    <td><strong>{{ result.parameter.name }}</strong></td>
+                    <td>
+                      <input
+                        class="field-input"
+                        type="text"
+                        name="result_{{ result.id }}"
+                        value="{{ result.value }}"
+                        placeholder="Enter result"
+                      >
+                    </td>
+                    <td>{{ result.parameter.unit|default:"—" }}</td>
+                    <td class="range-cell">{{ result.parameter.reference_range|default:"—" }}</td>
+                  </tr>
+                  {% empty %}
+                  <tr><td colspan="4" class="empty">No parameters for this test.</td></tr>
+                  {% endfor %}
+                {% endif %}
+              </tbody>
+            </table>
+          </div>
+
+          <div class="form-actions modal-footer-actions">
+            <button class="btn btn-primary" type="submit" name="action" value="save_results">Save Results</button>
+            {% if active_test.id in selected_ids %}
+            <button class="btn btn-danger" type="submit" name="action" value="remove_test">Remove</button>
+            {% endif %}
+            <a class="btn btn-secondary" href="{% url 'lab:reports' %}">Done</a>
+          </div>
+        </form>
+        {% endif %}
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  (function () {
+    const input = document.getElementById('workspace-test-filter');
+    if (!input) return;
+    input.addEventListener('input', function () {
+      const q = this.value.trim().toLowerCase();
+      document.querySelectorAll('.workspace-test-link').forEach((el) => {
+        const match = !q || (el.dataset.name || '').includes(q);
+        el.parentElement.style.display = match ? '' : 'none';
+      });
+      document.querySelectorAll('.workspace-cat').forEach((cat) => {
+        const visible = [...cat.querySelectorAll('li')].some((li) => li.style.display !== 'none');
+        cat.style.display = visible ? '' : 'none';
+      });
+    });
+
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape') {
+        window.location.href = "{% url 'lab:book_test' %}";
+      }
+    });
+  })();
+</script>
+{% endblock %}

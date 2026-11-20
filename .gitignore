@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.sqlite3
+db.sqlite3
+.env
+.venv/
+venv/
+env/
+staticfiles/
+media/
+*.log
+.DS_Store
+Thumbs.db
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local / IDE
+.idea/
+.vscode/
+*.swp
+_ref_report/
+assets/
+
+_tmp_*.py

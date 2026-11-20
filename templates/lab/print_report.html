@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Print {{ report_no }}</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #111; }
+    iframe { border: 0; width: 100%; height: 100%; }
+    .hint {
+      position: fixed; left: 12px; bottom: 12px; z-index: 2;
+      background: rgba(5, 46, 22, 0.92); color: #fff;
+      font: 600 13px/1.4 system-ui, sans-serif;
+      padding: 10px 14px; border-radius: 10px; max-width: 420px;
+    }
+    @media print {
+      .hint { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="hint">
+    Print dialog: choose <b>Actual size</b> / <b>100%</b> (not Fit to page).
+    Paper: A4. Content is already sized from the top-left.
+  </div>
+  <iframe id="pdf" title="Report PDF" src="{{ pdf_url }}"></iframe>
+  <script>
+    (function () {
+      var frame = document.getElementById('pdf')
+      function triggerPrint() {
+        try {
+          if (frame && frame.contentWindow) {
+            frame.contentWindow.focus()
+            frame.contentWindow.print()
+            return
+          }
+        } catch (e) {}
+        window.print()
+      }
+      frame.addEventListener('load', function () {
+        setTimeout(triggerPrint, 600)
+      })
+      setTimeout(triggerPrint, 1800)
+    })()
+  </script>
+</body>
+</html>

@@ -1,0 +1,73 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Khalsa Clinical Laboratory{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'lab/css/app.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% if user.is_authenticated %}
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand" title="Khalsa Clinical Laboratory">K</div>
+      <p class="sidebar-lab">Khalsa Lab</p>
+      <nav class="sidebar-nav">
+        <a href="{% url 'lab:patients' %}" class="{% if active_tab == 'patients' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4.4 0-8 2.2-8 5v1h16v-1c0-2.8-3.6-5-8-5Z"/></svg>
+          <span>All Patients</span>
+        </a>
+        <a href="{% url 'lab:book_test' %}" class="{% if active_tab == 'book' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 3H5a2 2 0 0 0-2 2v14l4-2 4 2 4-2 4 2V5a2 2 0 0 0-2-2Zm-2 10H7v-2h10Zm0-4H7V7h10Z"/></svg>
+          <span>Book Test</span>
+        </a>
+        <a href="{% url 'lab:tests' %}" class="{% if active_tab == 'tests' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 2h10v2H7Zm1 4h8l1 14H7L8 6Zm3 3v8h2V9h-2Zm-3 2v6h2v-6H8Zm6 0v6h2v-6h-2Z"/></svg>
+          <span>Test</span>
+        </a>
+        <a href="{% url 'lab:categories' %}" class="{% if active_tab == 'categories' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h7v7H4Zm9 0h7v7h-7ZM4 13h7v7H4Zm9 0h7v7h-7Z"/></svg>
+          <span>Category</span>
+        </a>
+        <a href="{% url 'lab:doctors' %}" class="{% if active_tab == 'doctors' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 0 0-5 5v1H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-2V7a5 5 0 0 0-5-5Zm-3 6V7a3 3 0 0 1 6 0v1Zm2 5v4h2v-4h2v-2h-2v-2h-2v2H9v2Z"/></svg>
+          <span>Doctor</span>
+        </a>
+        <a href="{% url 'lab:reports' %}" class="{% if active_tab == 'reports' %}active{% endif %}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Zm0 2 4 4h-4ZM8 13h8v2H8Zm0 4h5v2H8Zm0-8h4v2H8Z"/></svg>
+          <span>Reports</span>
+        </a>
+      </nav>
+    </aside>
+    <div class="main">
+      <header class="topbar">
+        <div class="brand-block">
+          <h1>Khalsa Clinical Laboratory</h1>
+          <p>{% block page_subtitle %}Laboratory management{% endblock %}</p>
+        </div>
+        <div class="topbar-actions">
+          <span class="user-chip">{{ user.username }}</span>
+          <a class="btn btn-secondary btn-sm" href="{% url 'accounts:logout' %}">Logout</a>
+        </div>
+      </header>
+      <main class="content {% block content_class %}{% endblock %}">
+        {% if messages %}
+        <ul class="messages {% block messages_class %}{% endblock %}">
+          {% for message in messages %}
+          <li class="{% if message.tags %}{{ message.tags }}{% endif %}">{{ message }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+  {% else %}
+    {% block unauthenticated %}{% endblock %}
+  {% endif %}
+  <script src="{% static 'lab/js/app.js' %}"></script>
+  {% block extra_js %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+
+{% block title %}Reports — Khalsa Clinical Laboratory{% endblock %}
+{% block page_subtitle %}Bookings and lab reports{% endblock %}
+
+{% block content %}
+<div class="panel">
+  <div class="toolbar">
+    <form method="get" class="search-box" style="display:flex;gap:0.5rem;max-width:520px">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search report no, patient, mobile…">
+      <button class="btn btn-secondary" type="submit">Search</button>
+    </form>
+    <a class="btn btn-primary" href="{% url 'lab:book_test' %}">Book Test</a>
+  </div>
+
+  <div class="table-wrap">
+    <table class="data">
+      <thead>
+        <tr>
+          <th>Report No</th>
+          <th>Patient</th>
+          <th>Doctor</th>
+          <th>Test Date</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b in bookings %}
+        <tr>
+          <td><strong>{{ b.report_no }}</strong></td>
+          <td>{{ b.patient.name }}<br><span style="color:var(--slate-500);font-size:0.82rem">{{ b.patient.mobile }}</span></td>
+          <td>{{ b.doctor.name|default:"—" }}</td>
+          <td>{{ b.test_date|date:"d M Y H:i" }}</td>
+          <td><span class="badge {{ b.status }}">{{ b.get_status_display }}</span></td>
+          <td style="white-space:nowrap">
+            <a class="btn btn-secondary btn-sm" href="{% url 'lab:report_workspace' b.pk %}">Fill Report</a>
+            <a class="btn btn-primary btn-sm" href="{% url 'lab:report_pdf' b.pk %}">PDF</a>
+          </td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="6" class="empty">No bookings yet.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
