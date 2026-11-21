@@ -395,7 +395,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             line = [Paragraph(row_name, label_style)]
             for col in WIDAL_COLS:
                 cell = by_name.get(widal_cell_name(row_name, col))
-                val = ((cell.value if cell else '') or '').strip() or '—'
+                # Blank cells print as * (not − / —) so they don't look like negative.
+                val = ((cell.value if cell else '') or '').strip() or '*'
                 line.append(Paragraph(val, cell_style))
             matrix.append(line)
         result_val = ''
@@ -404,7 +405,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         matrix.append(
             [
                 Paragraph('RESULT', label_style),
-                Paragraph(f'<b>{result_val or "—"}</b>', cell_style),
+                Paragraph(f'<b>{result_val or "*"}</b>', cell_style),
                 '',
                 '',
                 '',

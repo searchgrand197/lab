@@ -549,7 +549,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                           (x) => x.name === widalCellName(row, col),
                                         )
                                         if (!r) {
-                                          return <td key={col} className="widal-cell muted">—</td>
+                                          return <td key={col} className="widal-cell muted">*</td>
                                         }
                                         const current = values[r.id] ?? ''
                                         return (
@@ -569,7 +569,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                                 }))
                                               }}
                                             >
-                                              {current || '·'}
+                                              {current || '*'}
                                             </button>
                                           </td>
                                         )
