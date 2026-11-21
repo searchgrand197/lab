@@ -941,12 +941,12 @@ input.field-input.result-input.result-out-range {
   letter-spacing: 0.01em;
 }
 .widal-toggle {
-  width: 2.4rem;
-  height: 2.4rem;
+  width: 2.85rem;
+  height: 2.85rem;
   border-radius: 0.45rem;
   border: 1px solid rgba(15, 118, 110, 0.28);
   background: #fff;
-  font-size: 1.15rem;
+  font-size: 1.55rem;
   font-weight: 800;
   line-height: 1;
   cursor: pointer;

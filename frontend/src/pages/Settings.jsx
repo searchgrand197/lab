@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { LabAPI } from '../api'
 
 const PRESETS = [
@@ -36,11 +36,19 @@ export default function Settings() {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
+  // Remember last custom plate so switching A4 → Custom does not wipe saved sizes.
+  const customSizeRef = useRef({ width: 186, height: 246 })
 
   useEffect(() => {
     LabAPI.printSettings()
       .then((data) => {
         setForm({ ...blank, ...data })
+        if (data.page_preset === 'Custom' || data.page_width_mm || data.page_height_mm) {
+          customSizeRef.current = {
+            width: Number(data.page_width_mm) || customSizeRef.current.width,
+            height: Number(data.page_height_mm) || customSizeRef.current.height,
+          }
+        }
         setPreviewUrl(data.background_image_url || '')
         setClearBackground(false)
         setFile(null)
@@ -63,19 +71,47 @@ export default function Settings() {
   }, [form.page_height_mm, form.header_height_mm, form.footer_height_mm])
 
   function setField(key, value) {
-    setForm((prev) => ({ ...prev, [key]: value }))
+    setForm((prev) => {
+      const next = { ...prev, [key]: value }
+      if (key === 'page_width_mm' || key === 'page_height_mm') {
+        next.page_preset = 'Custom'
+        customSizeRef.current = {
+          width: Number(key === 'page_width_mm' ? value : next.page_width_mm) || customSizeRef.current.width,
+          height: Number(key === 'page_height_mm' ? value : next.page_height_mm) || customSizeRef.current.height,
+        }
+      }
+      return next
+    })
     setMessage('')
     setError('')
   }
 
   function onPresetChange(preset) {
     const found = PRESETS.find((p) => p.value === preset)
-    setForm((prev) => ({
-      ...prev,
-      page_preset: preset,
-      page_width_mm: found?.width ?? prev.page_width_mm,
-      page_height_mm: found?.height ?? prev.page_height_mm,
-    }))
+    setForm((prev) => {
+      if (prev.page_preset === 'Custom') {
+        customSizeRef.current = {
+          width: Number(prev.page_width_mm) || customSizeRef.current.width,
+          height: Number(prev.page_height_mm) || customSizeRef.current.height,
+        }
+      }
+      if (preset === 'Custom') {
+        return {
+          ...prev,
+          page_preset: 'Custom',
+          page_width_mm: customSizeRef.current.width,
+          page_height_mm: customSizeRef.current.height,
+        }
+      }
+      return {
+        ...prev,
+        page_preset: preset,
+        page_width_mm: found?.width ?? prev.page_width_mm,
+        page_height_mm: found?.height ?? prev.page_height_mm,
+      }
+    })
+    setMessage('')
+    setError('')
   }
 
   async function onSubmit(e) {
@@ -105,7 +141,11 @@ export default function Settings() {
       setFile(null)
       setFileInputKey((k) => k + 1)
       setClearBackground(false)
-      setMessage(data.has_background ? 'Print settings saved — background stored' : 'Print settings saved')
+      setMessage(
+        `Saved on server: ${data.page_width_mm} × ${data.page_height_mm} mm`
+        + ` (${data.page_preset})`
+        + (data.has_background ? ' · background stored' : ''),
+      )
     } catch (err) {
       setError(err.message)
     } finally {
@@ -131,7 +171,8 @@ export default function Settings() {
         <section className="panel settings-panel">
           <h3 className="section-label">Page dimensions</h3>
           <p className="settings-help">
-            Print uses this width × height from the top-left of an A4 sheet. Remaining A4 area stays blank (no stretch).
+            Saved on the server (not in the browser). Print uses this width × height from the top-left of an A4 sheet.
+            Remaining A4 area stays blank (no stretch). Choose <strong>Custom size</strong> for letterhead plates like 186 × 246 mm.
           </p>
           <div className="form-grid form-grid-4">
             <div className="field span-2">

@@ -1049,8 +1049,12 @@ def print_settings_api(request):
     if 'public_base_url' in data:
         obj.public_base_url = str(data.get('public_base_url') or '').strip().rstrip('/')
 
+    # Named presets lock width/height. Custom keeps the values the user entered.
     if obj.page_preset != 'Custom':
         obj.apply_preset_size()
+    else:
+        # Guard: never let a stale named-preset path wipe a custom plate.
+        obj.page_preset = 'Custom'
 
     if obj.page_width_mm < 80 or obj.page_height_mm < 80:
         return JsonResponse({'error': 'Page size must be at least 80 × 80 mm.'}, status=400)

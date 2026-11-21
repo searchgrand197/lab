@@ -13,6 +13,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
     HRFlowable,
+    KeepTogether,
     Paragraph,
     SimpleDocTemplate,
     Spacer,
@@ -52,9 +53,7 @@ def _print_layout():
     that plate starting at the top-left corner of the A4 page.
     """
     cfg = PrintSettings.load()
-    if cfg.page_preset != 'Custom':
-        cfg.apply_preset_size()
-
+    # Use sizes stored in the DB exactly — never rewrite them during PDF build.
     plate_w_mm = float(cfg.page_width_mm)
     plate_h_mm = float(cfg.page_height_mm)
     # Never larger than A4 — overflow would leave the printer page.
@@ -182,6 +181,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     draw_background = bool(include_background)
 
     buffer = BytesIO()
+    # topMargin is finalized after measuring the repeating patient header below.
     doc = SimpleDocTemplate(
         buffer,
         pagesize=layout['pagesize'],
@@ -308,8 +308,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontSize=10,
         textColor=INK,
         alignment=1,
-        spaceBefore=14,
-        spaceAfter=10,
+        spaceBefore=8,
+        spaceAfter=4,
     )
     sign_style = ParagraphStyle(
         'Sign',
@@ -318,15 +318,9 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontSize=9,
         textColor=INK,
         alignment=2,
-        leading=12,
-    )
-    foot = ParagraphStyle(
-        'Foot',
-        parent=styles['Normal'],
-        fontName='Helvetica-Oblique',
-        fontSize=8,
-        textColor=MUTED,
-        alignment=1,
+        leading=11,
+        spaceBefore=0,
+        spaceAfter=0,
     )
 
     patient = booking.patient
@@ -335,16 +329,185 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     age_gender = f'{patient.age if patient.age is not None else ""}/{gender}'
     now = timezone.localtime()
 
-    story = []
-    lab_name = getattr(settings, 'LAB_NAME', 'Khalsa Clinical Laboratory')
-    if cfg.show_lab_title:
-        story.append(Paragraph(lab_name, lab_title))
-        story.append(Paragraph('Laboratory Investigation Report', lab_sub))
+    from lab.widal import COLS as WIDAL_COLS
+    from lab.widal import RESULT_NAME as WIDAL_RESULT
+    from lab.widal import ROWS as WIDAL_ROWS
+    from lab.widal import cell_name as widal_cell_name
+    from lab.widal import is_widal_test
 
-    if cfg.show_patient_header:
+    lab_name = getattr(settings, 'LAB_NAME', 'Khalsa Clinical Laboratory')
+    share_url = report_share_url(booking, public_base_url=public_base_url or '')
+    col_desc = content_w * 0.48
+    col_result = content_w * 0.15
+    col_unit = content_w * 0.14
+    col_range = content_w - col_desc - col_result - col_unit
+    col_widths = [col_desc, col_result, col_unit, col_range]
+
+    def _col_header_table():
+        t = Table(
+            [
+                [
+                    Paragraph('Test Description', col_head),
+                    Paragraph('Result', col_head),
+                    Paragraph('Unit', col_head),
+                    Paragraph('Reference Range', range_head),
+                ]
+            ],
+            colWidths=col_widths,
+        )
+        t.setStyle(
+            TableStyle(
+                [
+                    ('LINEBELOW', (0, 0), (-1, 0), 1.25, LINE),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+                    ('ALIGN', (1, 0), (2, 0), 'CENTER'),
+                    ('ALIGN', (3, 0), (3, 0), 'RIGHT'),
+                ]
+            )
+        )
+        return t
+
+    def _widal_flowable(all_results):
+        by_name = {r.parameter.name: r for r in all_results}
+        cell_style = ParagraphStyle(
+            'WidalCell',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=12,
+            alignment=1,
+            textColor=INK,
+            leading=14,
+        )
+        label_style = ParagraphStyle(
+            'WidalLabel',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
+            alignment=0,
+            textColor=INK,
+        )
+        matrix = [[''] + [Paragraph(c, cell_style) for c in WIDAL_COLS]]
+        for row_name in WIDAL_ROWS:
+            line = [Paragraph(row_name, label_style)]
+            for col in WIDAL_COLS:
+                cell = by_name.get(widal_cell_name(row_name, col))
+                val = ((cell.value if cell else '') or '').strip() or '—'
+                line.append(Paragraph(val, cell_style))
+            matrix.append(line)
+        result_val = ''
+        if by_name.get(WIDAL_RESULT):
+            result_val = (by_name[WIDAL_RESULT].value or '').strip()
+        matrix.append(
+            [
+                Paragraph('RESULT', label_style),
+                Paragraph(f'<b>{result_val or "—"}</b>', cell_style),
+                '',
+                '',
+                '',
+                '',
+            ]
+        )
+        antigen_w = content_w * 0.38
+        dil_w = (content_w - antigen_w) / len(WIDAL_COLS)
+        inner = Table(matrix, colWidths=[antigen_w] + [dil_w] * len(WIDAL_COLS))
+        inner.setStyle(
+            TableStyle(
+                [
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                    ('SPAN', (1, -1), (-1, -1)),
+                    ('LINEABOVE', (0, -1), (-1, -1), 0.5, LINE),
+                ]
+            )
+        )
+        return inner
+
+    def _standard_param_rows(filled_results):
+        rows = []
+        for result in filled_results:
+            param = result.parameter
+            value = (result.value or '').strip()
+            display_value = _format_indian_number(value)
+            state = evaluate_result_range(value, param.reference_range)
+            if state == 'high':
+                result_para = Paragraph(f'<b>{display_value}&nbsp;&nbsp;H</b>', result_out)
+            elif state == 'low':
+                result_para = Paragraph(f'<b>{display_value}&nbsp;&nbsp;L</b>', result_out)
+            elif state == 'in':
+                result_para = Paragraph(f'<b>{display_value}</b>', result_in)
+            else:
+                result_para = Paragraph(display_value, result_normal)
+            name_style = param_name_alert if state in ('high', 'low') else param_name
+            rows.append(
+                [
+                    Paragraph(param.name.upper(), name_style),
+                    result_para,
+                    Paragraph((param.unit or '').upper(), unit_style),
+                    Paragraph(param.reference_range or '', range_style),
+                ]
+            )
+        return rows
+
+    def _test_block(bt):
+        """One test title + its results, kept together so the title never orphans alone."""
+        all_results = list(bt.results.all())
+        filled_results = [r for r in all_results if (r.value or '').strip()]
+        if not filled_results:
+            return None
+
+        title_table = Table(
+            [[Paragraph(bt.test.name.upper(), test_head), '', '', '']],
+            colWidths=col_widths,
+        )
+        title_table.setStyle(
+            TableStyle(
+                [
+                    ('SPAN', (0, 0), (-1, 0)),
+                    ('LINEBELOW', (0, 0), (-1, 0), 0.8, LINE),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+                    ('LEFTPADDING', (0, 0), (-1, 0), 3),
+                    ('RIGHTPADDING', (0, 0), (-1, 0), 3),
+                    ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+                ]
+            )
+        )
+
+        if is_widal_test(bt.test):
+            body = _widal_flowable(all_results)
+            return KeepTogether([title_table, body])
+
+        body_rows = _standard_param_rows(filled_results)
+        body = Table(body_rows, colWidths=col_widths)
+        body.setStyle(
+            TableStyle(
+                [
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+                    ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+                    ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ]
+            )
+        )
+        return KeepTogether([title_table, body])
+
+    def _build_patient_header():
+        """Full 3-column header (patient / barcode+dates / QR) — same on every page."""
+        if not cfg.show_patient_header:
+            return None
         barcode_value = (booking.report_no or str(booking.id)).replace('-', '')
         barcode = code128.Code128(barcode_value, barHeight=10 * mm, barWidth=0.75, humanReadable=0)
-        share_url = report_share_url(booking, public_base_url=public_base_url or '')
         qr_widget = qr.QrCodeWidget(share_url)
         qr_bounds = qr_widget.getBounds()
         qr_w = qr_bounds[2] - qr_bounds[0]
@@ -416,27 +579,18 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 ]
             )
         )
-        story.append(header)
-        story.append(Spacer(1, 8))
+        return header
 
-    rows = [
-        [
-            Paragraph('Test Description', col_head),
-            Paragraph('Result', col_head),
-            Paragraph('Unit', col_head),
-            Paragraph('Reference Range', range_head),
-        ]
-    ]
-    style_cmds = [
-        ('LINEBELOW', (0, 0), (-1, 0), 1.25, LINE),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 3.5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-        ('ALIGN', (1, 0), (2, 0), 'CENTER'),
-        ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-    ]
+    # Reserve vertical space so the same patient header can be drawn on every page.
+    repeating_header_h = 0
+    sample_header = _build_patient_header()
+    if sample_header is not None:
+        _, repeating_header_h = sample_header.wrap(content_w, page_h)
+        repeating_header_h += 8  # gap below header before results
+    if cfg.show_lab_title:
+        # Lab title sits above the patient card on every page.
+        repeating_header_h += 28
+    doc.topMargin = layout['top'] + repeating_header_h
 
     booking_tests = list(
         booking.booking_tests.select_related('test__category').prefetch_related(
@@ -444,137 +598,17 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             'test__parameters',
         )
     )
-
-    from lab.widal import COLS as WIDAL_COLS
-    from lab.widal import RESULT_NAME as WIDAL_RESULT
-    from lab.widal import ROWS as WIDAL_ROWS
-    from lab.widal import cell_name as widal_cell_name
-    from lab.widal import is_widal_test
-
+    test_blocks = []
     for bt in booking_tests:
-        all_results = list(bt.results.all())
-        filled_results = [
-            result for result in all_results if (result.value or '').strip()
-        ]
-        if not filled_results:
-            continue
+        block = _test_block(bt)
+        if block is not None:
+            test_blocks.append(block)
 
-        rows.append(
-            [
-                Paragraph(bt.test.name.upper(), test_head),
-                '',
-                '',
-                '',
-            ]
-        )
-        header_row = len(rows) - 1
-        style_cmds.append(('SPAN', (0, header_row), (-1, header_row)))
-        style_cmds.append(('TOPPADDING', (0, header_row), (-1, header_row), 8))
-        style_cmds.append(('LINEBELOW', (0, header_row), (-1, header_row), 0.8, LINE))
-
-        if is_widal_test(bt.test):
-            by_name = {r.parameter.name: r for r in all_results}
-            cell_style = ParagraphStyle(
-                'WidalCell',
-                parent=styles['Normal'],
-                fontName='Helvetica-Bold',
-                fontSize=9,
-                alignment=1,
-                textColor=INK,
-            )
-            label_style = ParagraphStyle(
-                'WidalLabel',
-                parent=styles['Normal'],
-                fontName='Helvetica',
-                fontSize=8,
-                alignment=0,
-                textColor=INK,
-            )
-            matrix = [[''] + [Paragraph(c, cell_style) for c in WIDAL_COLS]]
-            for row_name in WIDAL_ROWS:
-                line = [Paragraph(row_name, label_style)]
-                for col in WIDAL_COLS:
-                    val = (by_name.get(widal_cell_name(row_name, col)).value if by_name.get(widal_cell_name(row_name, col)) else '') or ''
-                    val = val.strip() or '—'
-                    line.append(Paragraph(val, cell_style))
-                matrix.append(line)
-            result_val = ''
-            if by_name.get(WIDAL_RESULT):
-                result_val = (by_name[WIDAL_RESULT].value or '').strip()
-            result_line = [
-                Paragraph('RESULT', label_style),
-                Paragraph(f'<b>{result_val or "—"}</b>', cell_style),
-                '',
-                '',
-                '',
-                '',
-            ]
-            matrix.append(result_line)
-
-            antigen_w = content_w * 0.38
-            dil_w = (content_w - antigen_w) / len(WIDAL_COLS)
-            inner = Table(matrix, colWidths=[antigen_w] + [dil_w] * len(WIDAL_COLS))
-            inner.setStyle(
-                TableStyle(
-                    [
-                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-                        ('LEFTPADDING', (0, 0), (-1, -1), 2),
-                        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-                        ('TOPPADDING', (0, 0), (-1, -1), 3),
-                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-                        ('SPAN', (1, -1), (-1, -1)),
-                        ('LINEABOVE', (0, -1), (-1, -1), 0.5, LINE),
-                    ]
-                )
-            )
-            rows.append([inner, '', '', ''])
-            matrix_row = len(rows) - 1
-            style_cmds.append(('SPAN', (0, matrix_row), (-1, matrix_row)))
-            continue
-
-        for result in filled_results:
-            param = result.parameter
-            value = (result.value or '').strip()
-            display_value = _format_indian_number(value)
-            state = evaluate_result_range(value, param.reference_range)
-            # B/W-safe flags: underline + H/L (no colour / asterisks).
-            if state == 'high':
-                result_para = Paragraph(
-                    f'<b><u>{display_value}</u>&nbsp;&nbsp;H</b>',
-                    result_out,
-                )
-            elif state == 'low':
-                result_para = Paragraph(
-                    f'<b><u>{display_value}</u>&nbsp;&nbsp;L</b>',
-                    result_out,
-                )
-            elif state == 'in':
-                result_para = Paragraph(f'<b>{display_value}</b>', result_in)
-            else:
-                result_para = Paragraph(display_value, result_normal)
-
-            name_style = param_name_alert if state in ('high', 'low') else param_name
-            rows.append(
-                [
-                    Paragraph(param.name.upper(), name_style),
-                    result_para,
-                    Paragraph((param.unit or '').upper(), unit_style),
-                    Paragraph(param.reference_range or '', range_style),
-                ]
-            )
-
-    col_desc = content_w * 0.48
-    col_result = content_w * 0.15
-    col_unit = content_w * 0.14
-    col_range = content_w - col_desc - col_result - col_unit
-    result_table = Table(
-        rows,
-        colWidths=[col_desc, col_result, col_unit, col_range],
-        repeatRows=1,
-    )
-    result_table.setStyle(TableStyle(style_cmds))
-    story.append(result_table)
+    story = []
+    if test_blocks:
+        # Keep test title with its body so it never sits alone on a page.
+        story.append(KeepTogether([_col_header_table(), test_blocks[0]]))
+        story.extend(test_blocks[1:])
 
     legend = ParagraphStyle(
         'Legend',
@@ -583,26 +617,28 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontSize=8,
         textColor=INK,
         alignment=0,
-        spaceBefore=8,
-        leading=11,
+        spaceBefore=4,
+        spaceAfter=0,
+        leading=10,
     )
     story.append(
         Paragraph(
             '<b>Key:</b>  <b>H</b> = High (above range) &nbsp;&nbsp; '
-            '<b>L</b> = Low (below range) &nbsp;&nbsp; '
-            'Abnormal results are underlined.',
+            '<b>L</b> = Low (below range)',
             legend,
         )
     )
-    story.append(Paragraph('**** END OF REPORT ****', end_style))
-    story.append(HRFlowable(width='100%', thickness=1, color=LINE, spaceBefore=4, spaceAfter=16))
-    story.append(Paragraph('____________________________', sign_style))
-    story.append(Paragraph('Authorized Signatory', sign_style))
-    story.append(Spacer(1, 10))
+    # Keep closing block together so signatory never orphans onto a blank page.
+    # Spacer leaves room for a handwritten / stamp signature above the line.
     story.append(
-        Paragraph(
-            'This is a computer-generated report from Khalsa Clinical Laboratory.',
-            foot,
+        KeepTogether(
+            [
+                Paragraph('**** END OF REPORT ****', end_style),
+                HRFlowable(width='100%', thickness=1, color=LINE, spaceBefore=2, spaceAfter=4),
+                Spacer(1, 22),
+                Paragraph('____________________________', sign_style),
+                Paragraph('Authorized Signatory', sign_style),
+            ]
         )
     )
 
@@ -632,28 +668,36 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 mask='auto',
             )
 
-        # Footer chrome inside the plate footer band.
-        footer_y = plate_y + max(4 * mm, layout['footer_h'] * 0.35)
+        # Footer chrome inside the plate footer band (disclaimer lives here so it
+        # cannot force an almost-empty trailing page).
+        footer_y = plate_y + max(4 * mm, layout['footer_h'] * 0.28)
         plate_right = plate_w - layout['right_in_plate']
-        canvas.setFont('Helvetica', 8)
+        mid_x = (layout['left'] + plate_right) / 2
         canvas.setFillColor(MUTED)
+        if layout['footer_h'] >= 10 * mm:
+            canvas.setFont('Helvetica-Oblique', 7)
+            canvas.drawCentredString(
+                mid_x,
+                footer_y + 4.2 * mm,
+                'This is a computer-generated report from Khalsa Clinical Laboratory.',
+            )
+        canvas.setFont('Helvetica', 8)
         canvas.drawString(layout['left'], footer_y, f'{booking.report_no or ""} · {patient.display_name}')
         canvas.drawRightString(plate_right, footer_y, f'Page {doc_.page}')
 
-        if doc_.page > 1 and layout['header_h'] >= 8 * mm:
-            canvas.setStrokeColor(LINE)
-            canvas.setLineWidth(0.6)
-            y = page_h - layout['header_h'] + 2 * mm
-            canvas.line(layout['left'], y, plate_right, y)
+        # Same patient header (name / barcode / QR) on every page — including page 2+.
+        y_cursor = page_h - layout['top']
+        if cfg.show_lab_title:
             canvas.setFillColor(INK)
-            canvas.setFont('Helvetica-Bold', 9)
-            canvas.drawString(layout['left'], y + 3 * mm, patient.display_name)
+            canvas.setFont('Helvetica-Bold', 14)
+            canvas.drawCentredString(mid_x, y_cursor - 14, lab_name)
             canvas.setFont('Helvetica', 8)
-            canvas.drawRightString(
-                plate_right,
-                y + 3 * mm,
-                f'{booking.report_no or ""} · {age_gender}',
-            )
+            canvas.drawCentredString(mid_x, y_cursor - 26, 'Laboratory Investigation Report')
+            y_cursor -= 30
+        header = _build_patient_header()
+        if header is not None:
+            _, hh = header.wrap(content_w, page_h)
+            header.drawOn(canvas, layout['left'], y_cursor - hh)
         canvas.restoreState()
 
     doc.build(
