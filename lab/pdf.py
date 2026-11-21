@@ -445,11 +445,16 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         )
     )
 
+    from lab.widal import COLS as WIDAL_COLS
+    from lab.widal import RESULT_NAME as WIDAL_RESULT
+    from lab.widal import ROWS as WIDAL_ROWS
+    from lab.widal import cell_name as widal_cell_name
+    from lab.widal import is_widal_test
+
     for bt in booking_tests:
+        all_results = list(bt.results.all())
         filled_results = [
-            result
-            for result in bt.results.all()
-            if (result.value or '').strip()
+            result for result in all_results if (result.value or '').strip()
         ]
         if not filled_results:
             continue
@@ -466,6 +471,67 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         style_cmds.append(('SPAN', (0, header_row), (-1, header_row)))
         style_cmds.append(('TOPPADDING', (0, header_row), (-1, header_row), 8))
         style_cmds.append(('LINEBELOW', (0, header_row), (-1, header_row), 0.8, LINE))
+
+        if is_widal_test(bt.test):
+            by_name = {r.parameter.name: r for r in all_results}
+            cell_style = ParagraphStyle(
+                'WidalCell',
+                parent=styles['Normal'],
+                fontName='Helvetica-Bold',
+                fontSize=9,
+                alignment=1,
+                textColor=INK,
+            )
+            label_style = ParagraphStyle(
+                'WidalLabel',
+                parent=styles['Normal'],
+                fontName='Helvetica',
+                fontSize=8,
+                alignment=0,
+                textColor=INK,
+            )
+            matrix = [[''] + [Paragraph(c, cell_style) for c in WIDAL_COLS]]
+            for row_name in WIDAL_ROWS:
+                line = [Paragraph(row_name, label_style)]
+                for col in WIDAL_COLS:
+                    val = (by_name.get(widal_cell_name(row_name, col)).value if by_name.get(widal_cell_name(row_name, col)) else '') or ''
+                    val = val.strip() or '—'
+                    line.append(Paragraph(val, cell_style))
+                matrix.append(line)
+            result_val = ''
+            if by_name.get(WIDAL_RESULT):
+                result_val = (by_name[WIDAL_RESULT].value or '').strip()
+            result_line = [
+                Paragraph('RESULT', label_style),
+                Paragraph(f'<b>{result_val or "—"}</b>', cell_style),
+                '',
+                '',
+                '',
+                '',
+            ]
+            matrix.append(result_line)
+
+            antigen_w = content_w * 0.38
+            dil_w = (content_w - antigen_w) / len(WIDAL_COLS)
+            inner = Table(matrix, colWidths=[antigen_w] + [dil_w] * len(WIDAL_COLS))
+            inner.setStyle(
+                TableStyle(
+                    [
+                        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+                        ('LEFTPADDING', (0, 0), (-1, -1), 2),
+                        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+                        ('TOPPADDING', (0, 0), (-1, -1), 3),
+                        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                        ('SPAN', (1, -1), (-1, -1)),
+                        ('LINEABOVE', (0, -1), (-1, -1), 0.5, LINE),
+                    ]
+                )
+            )
+            rows.append([inner, '', '', ''])
+            matrix_row = len(rows) - 1
+            style_cmds.append(('SPAN', (0, matrix_row), (-1, matrix_row)))
+            continue
 
         for result in filled_results:
             param = result.parameter

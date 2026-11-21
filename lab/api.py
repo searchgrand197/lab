@@ -223,6 +223,7 @@ def _test_dict(test, include_params=False):
         'category_id': test.category_id,
         'category_name': test.category.name,
         'sort_order': test.sort_order,
+        'layout': getattr(test, 'layout', '') or '',
         'parameter_count': test.parameters.count(),
     }
     if include_params:
@@ -284,13 +285,13 @@ def _ensure_booking_test(booking, test):
         test=test,
         defaults={'price': test.price},
     )
-    if created or not bt.results.exists():
-        for param in test.parameters.all():
-            TestResult.objects.get_or_create(
-                booking_test=bt,
-                parameter=param,
-                defaults={'value': ''},
-            )
+    # Always sync missing parameters (e.g. Widal matrix cells added later).
+    for param in test.parameters.all():
+        TestResult.objects.get_or_create(
+            booking_test=bt,
+            parameter=param,
+            defaults={'value': ''},
+        )
     return bt
 
 
@@ -825,6 +826,10 @@ def booking_detail_api(request, pk):
         if test_id:
             test = get_object_or_404(Test, pk=test_id, is_active=True)
             _ensure_booking_test(booking, test)
+        else:
+            # Sync any new parameters (e.g. Widal matrix cells) onto existing booking tests.
+            for bt in booking.booking_tests.select_related('test'):
+                _ensure_booking_test(booking, bt.test)
         return JsonResponse(_booking_dict(booking, detail=True))
 
     data = _body(request)

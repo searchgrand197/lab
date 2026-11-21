@@ -52,6 +52,33 @@ function parseNumber(raw) {
   return Number.isFinite(num) ? num : null
 }
 
+const WIDAL_ROWS = [
+  'SALMONELLA TYPHI O',
+  'SALMONELLA TYPHI H',
+  'SALMONELLA PARATYPHI (AH)',
+  'SALMONELLA PARATYPHI (BH)',
+]
+const WIDAL_COLS = ['1/20', '1/40', '1/80', '1/160', '1/320']
+const WIDAL_RESULT = 'RESULT'
+
+function isWidalTest(test) {
+  if (!test) return false
+  if (test.layout === 'widal_matrix') return true
+  const name = String(test.name || '').trim().toLowerCase()
+  return name === 'widal test' || name === 'widal'
+}
+
+function widalCellName(row, col) {
+  return `${row} @ ${col}`
+}
+
+function cycleAgglutination(current) {
+  const v = String(current || '').trim()
+  if (v === '+') return '-'
+  if (v === '-') return ''
+  return '+'
+}
+
 /** Returns 'in' | 'high' | 'low' | null when range cannot be compared. */
 function evaluateResultRange(value, referenceRange) {
   const num = parseNumber(value)
@@ -502,76 +529,157 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
 
                       {isOpen ? (
                         <div className="result-accordion-body">
-                          <div className="table-wrap">
-                            <table className="data">
-                              <thead>
-                                <tr>
-                                  <th>Parameter</th>
-                                  <th>Result</th>
-                                  <th>Unit</th>
-                                  <th className="range-cell">Range</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {(entry.results || []).map((r) => {
-                                  const current = values[r.id] ?? ''
-                                  const rangeState = evaluateResultRange(current, r.reference_range)
-                                  const outClass = rangeState === 'high' || rangeState === 'low' ? 'result-out-range' : ''
-                                  return (
-                                    <tr key={r.id}>
-                                      <td><strong>{r.name}</strong></td>
-                                      <td>
-                                        <div className="result-value-wrap">
+                          {isWidalTest(entry.test) ? (
+                            <div className="widal-matrix-wrap">
+                              <table className="widal-matrix">
+                                <thead>
+                                  <tr>
+                                    <th className="widal-antigen" />
+                                    {WIDAL_COLS.map((col) => (
+                                      <th key={col}>{col}</th>
+                                    ))}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {WIDAL_ROWS.map((row) => (
+                                    <tr key={row}>
+                                      <td className="widal-antigen"><strong>{row}</strong></td>
+                                      {WIDAL_COLS.map((col) => {
+                                        const r = (entry.results || []).find(
+                                          (x) => x.name === widalCellName(row, col),
+                                        )
+                                        if (!r) {
+                                          return <td key={col} className="widal-cell muted">—</td>
+                                        }
+                                        const current = values[r.id] ?? ''
+                                        return (
+                                          <td key={col} className="widal-cell">
+                                            <button
+                                              type="button"
+                                              className={`widal-toggle result-input ${current === '+' ? 'pos' : ''} ${current === '-' ? 'neg' : ''}`}
+                                              title="Click to cycle +, −, blank"
+                                              disabled={busy}
+                                              aria-label={`${row} ${col}`}
+                                              onClick={() => {
+                                                dirtyRef.current = true
+                                                setError('')
+                                                setValues((v) => ({
+                                                  ...v,
+                                                  [r.id]: cycleAgglutination(v[r.id]),
+                                                }))
+                                              }}
+                                            >
+                                              {current || '·'}
+                                            </button>
+                                          </td>
+                                        )
+                                      })}
+                                    </tr>
+                                  ))}
+                                  <tr className="widal-result-row">
+                                    <td className="widal-antigen"><strong>RESULT</strong></td>
+                                    <td colSpan={WIDAL_COLS.length}>
+                                      {(() => {
+                                        const r = (entry.results || []).find((x) => x.name === WIDAL_RESULT)
+                                        if (!r) return <span className="muted">RESULT parameter missing — re-seed / refresh test</span>
+                                        const current = values[r.id] ?? ''
+                                        return (
                                           <input
-                                            className={`field-input result-input ${rangeState === 'in' ? 'result-in-range' : ''} ${outClass}`}
+                                            className="field-input result-input widal-result-input"
                                             value={current}
-                                            inputMode="decimal"
+                                            disabled={busy}
+                                            placeholder="e.g. NEGATIVE / POSITIVE"
                                             onChange={(e) => {
                                               dirtyRef.current = true
                                               setError('')
-                                              const cleaned = e.target.value.replace(/,/g, '')
-                                              let next = e.target.value
-                                              if (cleaned === '' || cleaned === '-' || /^-?\d+\.$/.test(cleaned)) {
-                                                next = cleaned
-                                              } else if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
-                                                next = formatIndianNumber(cleaned)
-                                              }
-                                              setValues((v) => ({ ...v, [r.id]: next }))
-                                            }}
-                                            onBlur={(e) => {
-                                              const formatted = formatIndianNumber(e.target.value)
-                                              if (formatted === e.target.value) return
-                                              dirtyRef.current = true
-                                              setValues((v) => ({ ...v, [r.id]: formatted }))
+                                              setValues((v) => ({ ...v, [r.id]: e.target.value }))
                                             }}
                                             onKeyDown={(e) => {
                                               if (e.key !== 'Enter') return
                                               e.preventDefault()
-                                              const formatted = formatIndianNumber(e.currentTarget.value)
-                                              if (formatted !== e.currentTarget.value) {
-                                                dirtyRef.current = true
-                                                setValues((v) => ({ ...v, [r.id]: formatted }))
-                                              }
                                               focusNextResultInput(e.currentTarget)
                                             }}
-                                            placeholder="Enter result"
                                           />
-                                          {rangeState === 'high' ? (
-                                            <span className="result-flag result-flag-high" title="Above range">↑</span>
-                                          ) : null}
-                                          {rangeState === 'low' ? (
-                                            <span className="result-flag result-flag-low" title="Below range">↓</span>
-                                          ) : null}
-                                        </div>
-                                      </td>
-                                      <td>{r.unit || '—'}</td>
-                                      <td className="range-cell">{r.reference_range || '—'}</td>
-                                    </tr>
-                                  )
-                                })}
-                              </tbody>
-                            </table>
-                          </div>
+                                        )
+                                      })()}
+                                    </td>
+                                  </tr>
+                                </tbody>
+                              </table>
+                              <p className="widal-hint">Click a cell to cycle + / − / blank, or type a value. Enter the overall RESULT below.</p>
+                            </div>
+                          ) : (
+                            <div className="table-wrap">
+                              <table className="data">
+                                <thead>
+                                  <tr>
+                                    <th>Parameter</th>
+                                    <th>Result</th>
+                                    <th>Unit</th>
+                                    <th className="range-cell">Range</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {(entry.results || []).map((r) => {
+                                    const current = values[r.id] ?? ''
+                                    const rangeState = evaluateResultRange(current, r.reference_range)
+                                    const outClass = rangeState === 'high' || rangeState === 'low' ? 'result-out-range' : ''
+                                    return (
+                                      <tr key={r.id}>
+                                        <td><strong>{r.name}</strong></td>
+                                        <td>
+                                          <div className="result-value-wrap">
+                                            <input
+                                              className={`field-input result-input ${rangeState === 'in' ? 'result-in-range' : ''} ${outClass}`}
+                                              value={current}
+                                              inputMode="decimal"
+                                              onChange={(e) => {
+                                                dirtyRef.current = true
+                                                setError('')
+                                                const cleaned = e.target.value.replace(/,/g, '')
+                                                let next = e.target.value
+                                                if (cleaned === '' || cleaned === '-' || /^-?\d+\.$/.test(cleaned)) {
+                                                  next = cleaned
+                                                } else if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
+                                                  next = formatIndianNumber(cleaned)
+                                                }
+                                                setValues((v) => ({ ...v, [r.id]: next }))
+                                              }}
+                                              onBlur={(e) => {
+                                                const formatted = formatIndianNumber(e.target.value)
+                                                if (formatted === e.target.value) return
+                                                dirtyRef.current = true
+                                                setValues((v) => ({ ...v, [r.id]: formatted }))
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key !== 'Enter') return
+                                                e.preventDefault()
+                                                const formatted = formatIndianNumber(e.currentTarget.value)
+                                                if (formatted !== e.currentTarget.value) {
+                                                  dirtyRef.current = true
+                                                  setValues((v) => ({ ...v, [r.id]: formatted }))
+                                                }
+                                                focusNextResultInput(e.currentTarget)
+                                              }}
+                                              placeholder="Enter result"
+                                            />
+                                            {rangeState === 'high' ? (
+                                              <span className="result-flag result-flag-high" title="Above range">↑</span>
+                                            ) : null}
+                                            {rangeState === 'low' ? (
+                                              <span className="result-flag result-flag-low" title="Below range">↓</span>
+                                            ) : null}
+                                          </div>
+                                        </td>
+                                        <td>{r.unit || '—'}</td>
+                                        <td className="range-cell">{r.reference_range || '—'}</td>
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                           <div className="result-accordion-actions">
                             <button
                               className="btn btn-danger btn-sm"

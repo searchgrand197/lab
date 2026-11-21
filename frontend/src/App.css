@@ -911,6 +911,77 @@ input.field-input.result-input.result-out-range {
   background: #fef2f2;
   box-shadow: inset 0 0 0 1px rgba(220, 38, 38, 0.18);
 }
+.widal-matrix-wrap {
+  overflow-x: auto;
+  padding: 0.25rem 0 0.5rem;
+}
+.widal-matrix {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 520px;
+  font-size: 0.88rem;
+}
+.widal-matrix th,
+.widal-matrix td {
+  padding: 0.45rem 0.35rem;
+  text-align: center;
+  vertical-align: middle;
+  border-bottom: 1px solid rgba(15, 118, 110, 0.12);
+}
+.widal-matrix th {
+  font-weight: 700;
+  color: var(--slate-600, #475569);
+  font-size: 0.82rem;
+}
+.widal-matrix .widal-antigen {
+  text-align: left;
+  white-space: nowrap;
+  padding-right: 0.75rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.01em;
+}
+.widal-toggle {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 0.45rem;
+  border: 1px solid rgba(15, 118, 110, 0.28);
+  background: #fff;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--slate-400, #94a3b8);
+}
+.widal-toggle.pos {
+  color: #15803d;
+  border-color: rgba(22, 163, 74, 0.55);
+  background: #f0fdf4;
+}
+.widal-toggle.neg {
+  color: #0f172a;
+  border-color: rgba(15, 23, 42, 0.35);
+  background: #f8fafc;
+}
+.widal-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.widal-result-row td {
+  border-bottom: none;
+  padding-top: 0.75rem;
+}
+.widal-result-input {
+  width: 100%;
+  max-width: 22rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.widal-hint {
+  margin: 0.55rem 0 0;
+  font-size: 0.78rem;
+  color: var(--slate-500, #64748b);
+}
 .settings-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(260px, 0.8fr);

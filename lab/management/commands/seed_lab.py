@@ -77,14 +77,20 @@ class Command(BaseCommand):
                     defaults={
                         'price': test_data.get('price', 0),
                         'is_active': True,
+                        'layout': test_data.get('layout', '') or '',
                     },
                 )
                 tests_count += 1
 
-                # Remove unused old parameters that have no results (safe refresh)
+                # Remove unused old parameters (safe refresh).
+                # Also drop orphan params that only have blank result rows (e.g. old Widal titres).
                 keep_names = {p[0] for p in test_data['parameters']}
                 for old in test.parameters.exclude(name__in=keep_names):
-                    if not TestResult.objects.filter(parameter=old).exists():
+                    qs = TestResult.objects.filter(parameter=old)
+                    if not qs.exists():
+                        old.delete()
+                    elif not qs.exclude(value='').exists():
+                        qs.delete()
                         old.delete()
 
                 for order, (name, unit, reference_range) in enumerate(test_data['parameters'], start=1):

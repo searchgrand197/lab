@@ -2,8 +2,11 @@
 
 from decimal import Decimal
 
+from lab.widal import LAYOUT as WIDAL_LAYOUT
+from lab.widal import matrix_parameters as widal_matrix_parameters
+
 # Each category: name, tests[]
-# Each test: name, price, parameters[(name, unit, reference_range)]
+# Each test: name, price, parameters[(name, unit, reference_range)], optional layout
 CATALOG = [
     {
         'category': 'Sputum Examination',
@@ -134,12 +137,8 @@ CATALOG = [
             {
                 'name': 'Widal Test',
                 'price': Decimal('250.00'),
-                'parameters': [
-                    ('Salm.Typhi (O)', 'TITRES', '< 1:80 NEGATIVE'),
-                    ('Salm.Typhi (H)', 'TITRES', '< 1:80 NEGATIVE'),
-                    ('Salm.Typhi (AH)', 'TITRES', '< 1:80 NEGATIVE'),
-                    ('Salm.Typhi (BH)', 'TITRES', '< 1:80 NEGATIVE'),
-                ],
+                'layout': WIDAL_LAYOUT,
+                'parameters': widal_matrix_parameters(),
             },
         ],
     },

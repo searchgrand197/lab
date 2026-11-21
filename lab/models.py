@@ -91,6 +91,8 @@ class Test(models.Model):
     name = models.CharField(max_length=150)
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     description = models.TextField(blank=True)
+    # '' = normal parameter table; 'widal_matrix' = antigen × dilution grid
+    layout = models.CharField(max_length=32, blank=True, default='')
     is_active = models.BooleanField(default=True)
     sort_order = models.PositiveIntegerField(default=0, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
