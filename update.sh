@@ -18,6 +18,12 @@ EXPECTED_REMOTE="https://github.com/searchgrand197/lab.git"
 
 cd "${APP_DIR}"
 
+# deploy.sh may have chown'd the tree to www-data — that makes Git refuse root.
+git config --global --add safe.directory "${APP_DIR}" 2>/dev/null || true
+if [[ -d "${APP_DIR}/.git" ]]; then
+  chown -R root:root "${APP_DIR}/.git" 2>/dev/null || true
+fi
+
 echo "==> Location: ${APP_DIR}"
 echo "==> Remotes:"
 git remote -v || true

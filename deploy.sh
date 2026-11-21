@@ -198,11 +198,25 @@ PY
 fi
 
 echo "==> Fixing ownership for ${APP_USER}"
+# Keep .git owned by root so future git pull/update.sh works as root.
+chown -R root:root "${APP_DIR}/.git" 2>/dev/null || true
+git config --global --add safe.directory "${APP_DIR}" 2>/dev/null || true
+chown -R "${APP_USER}:${APP_USER}" \
+  "${APP_DIR}/media" \
+  "${APP_DIR}/staticfiles" \
+  "${APP_DIR}/logs" \
+  "${APP_DIR}/.venv" \
+  "${APP_DIR}/frontend/dist" 2>/dev/null || true
+# App code readable by service user; writable DB/media.
 chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}"
+chown -R root:root "${APP_DIR}/.git" 2>/dev/null || true
 chmod 640 "${ENV_FILE}"
 chown root:"${APP_USER}" "${ENV_FILE}"
 chmod 775 "${APP_DIR}"
 chmod 664 "${APP_DIR}/db.sqlite3" 2>/dev/null || true
+# Allow nginx to read frontend build under /root
+chmod 711 /root 2>/dev/null || true
+chmod -R a+rX "${APP_DIR}/frontend/dist" 2>/dev/null || true
 
 echo "==> Writing Gunicorn systemd unit"
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
