@@ -211,6 +211,20 @@ function proteinFieldKey(name) {
   return null
 }
 
+/** Bilirubin total / conjugated(direct) / unconjugated(indirect). */
+function bilirubinFieldKey(name) {
+  const n = normalizeParamName(name)
+  if (!/bilirubin/.test(n)) return null
+  // urine/qualitative single "Bilirubin" rows — skip
+  if (n === 'bilirubin') return null
+  if (/unconjugated|uconjugated|indirect/.test(n)) return 'unconjugated'
+  if (/conjugated|direct/.test(n) && !/unconjugated|uconjugated|indirect/.test(n)) {
+    return 'conjugated'
+  }
+  if (/total/.test(n) || /serum bilirubin/.test(n)) return 'total'
+  return null
+}
+
 /**
  * Lab autofill for CBC + Biochemistry:
  * - Hb (Female or Male): RBC / PCV / MCV / MCH / MCHC (+ mirror generic Hb)
@@ -218,6 +232,8 @@ function proteinFieldKey(name) {
  * - WBC + DLC %: Absolute counts
  * - Protein Total + Albumin → Globulin (+ A/G ratio when present)
  *   Example: Protein 7, Albumin 4 → Globulin 3.00
+ * - Bilirubin Total + Conjugated → Unconjugated
+ *   Example: 0.8 − 0.2 → 0.60
  */
 function applyCbcAutofill(results, values, changedId, rawValue) {
   const list = results || []
@@ -305,6 +321,25 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       if (byProtein.ag_ratio && globulin !== 0) {
         next[byProtein.ag_ratio.id] = formatIndianNumber((albumin / globulin).toFixed(2))
       }
+    }
+  }
+
+  // --- Bilirubin: Unconjugated = Total − Conjugated (Direct) ---
+  const byBili = {}
+  list.forEach((r) => {
+    const key = bilirubinFieldKey(r.name)
+    if (key) byBili[key] = r
+  })
+  if (byBili.total && byBili.conjugated && byBili.unconjugated) {
+    const total = parseNumber(
+      byBili.total.id === changedId ? rawValue : next[byBili.total.id],
+    )
+    const conjugated = parseNumber(
+      byBili.conjugated.id === changedId ? rawValue : next[byBili.conjugated.id],
+    )
+    if (total != null && conjugated != null) {
+      const unconjugated = Number((total - conjugated).toFixed(2))
+      next[byBili.unconjugated.id] = formatIndianNumber(unconjugated.toFixed(2))
     }
   }
 
