@@ -115,8 +115,9 @@ function cbcDerivedKey(name) {
  */
 function calcCbcFromHb(hb) {
   if (hb == null || !Number.isFinite(hb) || hb <= 0) return null
-  const pcv = hb * 3
-  const rbc = hb / 3
+  // Round PCV/RBC first (same as common lab software), then derive indices.
+  const pcv = Number((hb * 3).toFixed(2))
+  const rbc = Number((hb / 3).toFixed(2))
   if (rbc <= 0 || pcv <= 0) return null
   return {
     rbc: rbc.toFixed(2),
