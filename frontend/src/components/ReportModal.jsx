@@ -237,6 +237,19 @@ function liverEnzymeKey(name) {
 }
 
 /**
+ * Renal: Urea → BUN (× 28/60), and BUN/Creatinine ratio.
+ * Example: Urea 40 → BUN 18.67
+ */
+function renalFieldKey(name) {
+  const n = normalizeParamName(name)
+  if (/bun/.test(n) && /creatinine/.test(n) && /ratio/.test(n)) return 'bun_crea_ratio'
+  if (/urea nitrogen|\bbun\b/.test(n) && !/creatinine|ratio/.test(n)) return 'bun'
+  if (/urea/.test(n) && !/nitrogen|bun|creatinine|ratio/.test(n)) return 'urea'
+  if (/creatinine/.test(n) && !/bun|urea|ratio|clearance/.test(n)) return 'creatinine'
+  return null
+}
+
+/**
  * Lipid profile fields.
  * Inputs: TC, HDL, TG → VLDL, LDL, ratios, NON-HDL, Total Lipids
  */
@@ -270,6 +283,8 @@ function lipidFieldKey(name) {
  * - Bilirubin Total + Direct/Conjugated → Indirect/Unconjugated
  *   Example: 1 − 0.20 → 0.80 (LFT) or 0.8 − 0.2 → 0.60
  * - SGOT + SGPT → SGOT/SGPT Ratio
+ * - Blood Urea → BUN (× 28/60); BUN/Creatinine ratio when creatinine present
+ *   Example: Urea 40 → BUN 18.67
  * - Lipid profile (TC, HDL, TG):
  *   VLDL = TG / 5
  *   LDL = TC − HDL − VLDL
@@ -401,6 +416,41 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     )
     if (sgot != null && sgpt != null && sgpt !== 0) {
       next[byLiver.ratio.id] = formatIndianNumber((sgot / sgpt).toFixed(2))
+    }
+  }
+
+  // --- RFT: BUN = Urea × 28/60; BUN/Creatinine ratio ---
+  const byRenal = {}
+  list.forEach((r) => {
+    const key = renalFieldKey(r.name)
+    if (key) byRenal[key] = r
+  })
+  if (byRenal.urea && byRenal.bun) {
+    const urea = parseNumber(
+      byRenal.urea.id === changedId ? rawValue : next[byRenal.urea.id],
+    )
+    if (urea != null) {
+      // Molecular factor: BUN = Urea × (28/60) → 40 → 18.67
+      const bun = Number(((urea * 28) / 60).toFixed(2))
+      next[byRenal.bun.id] = formatIndianNumber(bun.toFixed(2))
+      if (byRenal.creatinine && byRenal.bun_crea_ratio) {
+        const crea = parseNumber(
+          byRenal.creatinine.id === changedId ? rawValue : next[byRenal.creatinine.id],
+        )
+        if (crea != null && crea !== 0) {
+          next[byRenal.bun_crea_ratio.id] = formatIndianNumber((bun / crea).toFixed(2))
+        }
+      }
+    }
+  } else if (byRenal.bun && byRenal.creatinine && byRenal.bun_crea_ratio) {
+    const bun = parseNumber(
+      byRenal.bun.id === changedId ? rawValue : next[byRenal.bun.id],
+    )
+    const crea = parseNumber(
+      byRenal.creatinine.id === changedId ? rawValue : next[byRenal.creatinine.id],
+    )
+    if (bun != null && crea != null && crea !== 0) {
+      next[byRenal.bun_crea_ratio.id] = formatIndianNumber((bun / crea).toFixed(2))
     }
   }
 
