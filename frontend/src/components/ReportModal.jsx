@@ -225,6 +225,16 @@ function bilirubinFieldKey(name) {
   return null
 }
 
+/** LFT enzymes: SGOT (AST), SGPT (ALT), and their ratio. */
+function liverEnzymeKey(name) {
+  const n = normalizeParamName(name)
+  if (/ratio/.test(n) && /sgot|ast/.test(n) && /sgpt|alt/.test(n)) return 'ratio'
+  if (/sgot\s*\/\s*sgpt|ast\s*\/\s*alt/.test(n)) return 'ratio'
+  if (/(^|\s)sgot(\s|$)|aspartate|\bast\b/.test(n) && !/sgpt|alt|ratio/.test(n)) return 'sgot'
+  if (/(^|\s)sgpt(\s|$)|alanine|\balt\b/.test(n) && !/sgot|ast|ratio/.test(n)) return 'sgpt'
+  return null
+}
+
 /**
  * Lipid profile fields.
  * Inputs: TC, HDL, TG → VLDL, LDL, ratios, NON-HDL, Total Lipids
@@ -255,8 +265,9 @@ function lipidFieldKey(name) {
  * - WBC + DLC %: Absolute counts
  * - Protein Total + Albumin → Globulin (+ A/G ratio when present)
  *   Example: Protein 7, Albumin 4 → Globulin 3.00
- * - Bilirubin Total + Conjugated → Unconjugated
- *   Example: 0.8 − 0.2 → 0.60
+ * - Bilirubin Total + Direct/Conjugated → Indirect/Unconjugated
+ *   Example: 1 − 0.20 → 0.80 (LFT) or 0.8 − 0.2 → 0.60
+ * - SGOT + SGPT → SGOT/SGPT Ratio
  * - Lipid profile (TC, HDL, TG):
  *   VLDL = TG / 5
  *   LDL = TC − HDL − VLDL
@@ -354,7 +365,7 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     }
   }
 
-  // --- Bilirubin: Unconjugated = Total − Conjugated (Direct) ---
+  // --- Bilirubin: Indirect/Unconjugated = Total − Direct/Conjugated ---
   const byBili = {}
   list.forEach((r) => {
     const key = bilirubinFieldKey(r.name)
@@ -370,6 +381,24 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     if (total != null && conjugated != null) {
       const unconjugated = Number((total - conjugated).toFixed(2))
       next[byBili.unconjugated.id] = formatIndianNumber(unconjugated.toFixed(2))
+    }
+  }
+
+  // --- LFT: SGOT/SGPT Ratio = SGOT ÷ SGPT ---
+  const byLiver = {}
+  list.forEach((r) => {
+    const key = liverEnzymeKey(r.name)
+    if (key) byLiver[key] = r
+  })
+  if (byLiver.sgot && byLiver.sgpt && byLiver.ratio) {
+    const sgot = parseNumber(
+      byLiver.sgot.id === changedId ? rawValue : next[byLiver.sgot.id],
+    )
+    const sgpt = parseNumber(
+      byLiver.sgpt.id === changedId ? rawValue : next[byLiver.sgpt.id],
+    )
+    if (sgot != null && sgpt != null && sgpt !== 0) {
+      next[byLiver.ratio.id] = formatIndianNumber((sgot / sgpt).toFixed(2))
     }
   }
 

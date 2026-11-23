@@ -260,11 +260,11 @@ CATALOG = [
                 'parameters': [
                     ('BILIRUBIN - TOTAL', 'mg/dL', '0.20 - 1.00'),
                     ('BILIRUBIN - DIRECT', 'mg/dL', '0.00 - 0.30'),
-                    ('BILIRUBIN (INDIRECT)', 'mg/dL', '0.00 - 0.80'),
                     ('Gamma Glutamyl Transferase (GGT)', 'U/L', '12.0 - 64.0'),
-                    ('SGOT/SGPT Ratio', '', ''),
                     ('ASPARTATE AMINOTRANSFERASE (SGOT)', 'IU/L', '< 40.0'),
                     ('ALANINE TRANSAMINASE (SGPT)', 'IU/L', '< 41.0'),
+                    ('SGOT/SGPT Ratio', '', ''),
+                    ('BILIRUBIN (INDIRECT)', 'mg/dL', '0.00 - 0.80'),
                     ('ALKALINE PHOSPHATASE (ALP)', 'U/L', '65.0 - 650.0'),
                     ('PROTEIN - TOTAL', 'mg/dL', '6.4 - 8.2'),
                     ('ALBUMIN - SERUM', 'g/dL', '3.4 - 5.0'),
