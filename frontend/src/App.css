@@ -893,6 +893,10 @@ table.data th.range-cell {
   min-width: 1rem;
   text-align: center;
 }
+.result-flag-ok {
+  color: #15803d;
+}
+.result-flag-bad,
 .result-flag-high,
 .result-flag-low {
   color: #b91c1c;

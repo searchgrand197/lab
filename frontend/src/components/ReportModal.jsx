@@ -205,7 +205,8 @@ function proteinFieldKey(name) {
   }
   if (/globulin/.test(n) && !/albumin/.test(n)) return 'globulin'
   if (/albumin/.test(n) && !/globulin|ratio/.test(n)) return 'albumin'
-  if (/protein/.test(n) && (/total/.test(n) || /^s protein$/.test(n) || /s protein/.test(n))) {
+  // PROTEIN TOTAL, PROTEIN - TOTAL, S.PROTEIN, etc.
+  if (/protein/.test(n) && (/total/.test(n) || /(^|\s)s protein(\s|$)/.test(n))) {
     return 'protein'
   }
   return null
@@ -264,7 +265,8 @@ function lipidFieldKey(name) {
  * - Neutrophils / Lymphocytes: Monocytes / Eosinophils / Basophils (sum 100)
  * - WBC + DLC %: Absolute counts
  * - Protein Total + Albumin → Globulin (+ A/G ratio when present)
- *   Example: Protein 7, Albumin 4 → Globulin 3.00
+ *   Example: Protein 6, Albumin 3 → Globulin 3.00, A/G 1.00
+ *   Works for PROTEIN TOTAL / PROTEIN - TOTAL and ALBUMIN / ALBUMIN - SERUM
  * - Bilirubin Total + Direct/Conjugated → Indirect/Unconjugated
  *   Example: 1 − 0.20 → 0.80 (LFT) or 0.8 − 0.2 → 0.60
  * - SGOT + SGPT → SGOT/SGPT Ratio
@@ -1033,11 +1035,16 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                               }}
                                               placeholder="Enter result"
                                             />
-                                            {rangeState === 'high' ? (
-                                              <span className="result-flag result-flag-high" title="Above range">↑</span>
+                                            {rangeState === 'in' ? (
+                                              <span className="result-flag result-flag-ok" title="Within range">✓</span>
                                             ) : null}
-                                            {rangeState === 'low' ? (
-                                              <span className="result-flag result-flag-low" title="Below range">↓</span>
+                                            {rangeState === 'high' || rangeState === 'low' ? (
+                                              <span
+                                                className="result-flag result-flag-bad"
+                                                title={rangeState === 'high' ? 'Above range' : 'Below range'}
+                                              >
+                                                ✖
+                                              </span>
                                             ) : null}
                                           </div>
                                         </td>

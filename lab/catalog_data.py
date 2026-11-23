@@ -266,7 +266,7 @@ CATALOG = [
                     ('SGOT/SGPT Ratio', '', ''),
                     ('BILIRUBIN (INDIRECT)', 'mg/dL', '0.00 - 0.80'),
                     ('ALKALINE PHOSPHATASE (ALP)', 'U/L', '65.0 - 650.0'),
-                    ('PROTEIN - TOTAL', 'mg/dL', '6.4 - 8.2'),
+                    ('PROTEIN - TOTAL', 'mg/dL', '6.0 - 8.2'),
                     ('ALBUMIN - SERUM', 'g/dL', '3.4 - 5.0'),
                     ('SERUM GLOBULIN', 'g/dL', '1.8 - 3.8'),
                     ('SERUM ALBUMIN/GLOBULIN RATIO', '', '0.9 - 1.8'),
