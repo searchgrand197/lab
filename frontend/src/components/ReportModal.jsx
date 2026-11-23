@@ -192,11 +192,32 @@ function calcDlcRemainder(neutrophils, lymphocytes) {
   }
 }
 
+/** Protein / Albumin / Globulin / A:G fields on biochemistry panels. */
+function proteinFieldKey(name) {
+  const n = normalizeParamName(name)
+  if (/c reactive|electrophoresis/.test(n)) return null
+  if (
+    /a g ratio/.test(n)
+    || /albumin globulin ratio/.test(n)
+    || (/ratio/.test(n) && /albumin|globulin|a g/.test(n))
+  ) {
+    return 'ag_ratio'
+  }
+  if (/globulin/.test(n) && !/albumin/.test(n)) return 'globulin'
+  if (/albumin/.test(n) && !/globulin|ratio/.test(n)) return 'albumin'
+  if (/protein/.test(n) && (/total/.test(n) || /^s protein$/.test(n) || /s protein/.test(n))) {
+    return 'protein'
+  }
+  return null
+}
+
 /**
- * CBC autofill:
+ * Lab autofill for CBC + Biochemistry:
  * - Hb (Female or Male): RBC / PCV / MCV / MCH / MCHC (+ mirror generic Hb)
- * - Neutrophils + Lymphocytes: Monocytes / Eosinophils / Basophils (sum 100)
+ * - Neutrophils / Lymphocytes: Monocytes / Eosinophils / Basophils (sum 100)
  * - WBC + DLC %: Absolute counts
+ * - Protein Total + Albumin → Globulin (+ A/G ratio when present)
+ *   Example: Protein 7, Albumin 4 → Globulin 3.00
  */
 function applyCbcAutofill(results, values, changedId, rawValue) {
   const list = results || []
@@ -263,6 +284,28 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       if (!key || pct[key] == null) return
       next[r.id] = formatIndianNumber(String(Math.round((wbc * pct[key]) / 100)))
     })
+  }
+
+  // --- Biochemistry: Globulin = Protein Total − Albumin; A/G = Albumin ÷ Globulin ---
+  const byProtein = {}
+  list.forEach((r) => {
+    const key = proteinFieldKey(r.name)
+    if (key) byProtein[key] = r
+  })
+  if (byProtein.protein && byProtein.albumin && byProtein.globulin) {
+    const protein = parseNumber(
+      byProtein.protein.id === changedId ? rawValue : next[byProtein.protein.id],
+    )
+    const albumin = parseNumber(
+      byProtein.albumin.id === changedId ? rawValue : next[byProtein.albumin.id],
+    )
+    if (protein != null && albumin != null) {
+      const globulin = Number((protein - albumin).toFixed(2))
+      next[byProtein.globulin.id] = formatIndianNumber(globulin.toFixed(2))
+      if (byProtein.ag_ratio && globulin !== 0) {
+        next[byProtein.ag_ratio.id] = formatIndianNumber((albumin / globulin).toFixed(2))
+      }
+    }
   }
 
   return next
