@@ -237,15 +237,23 @@ function liverEnzymeKey(name) {
 }
 
 /**
- * Renal: Urea → BUN (× 28/60), and BUN/Creatinine ratio.
- * Example: Urea 40 → BUN 18.67
+ * Renal fields.
+ * From lab software screenshot (Urea=15, Crea=1):
+ *   BUN = Urea × 28/60 → 7.00
+ *   BLOOD UREA NITROGEN / CREATININE RATIO = BUN / Crea → 7.00
+ *   Bun / Creatinine (short name) = Urea / Crea → 15.00
  */
 function renalFieldKey(name) {
   const n = normalizeParamName(name)
-  if (/bun/.test(n) && /creatinine/.test(n) && /ratio/.test(n)) return 'bun_crea_ratio'
-  if (/urea nitrogen|\bbun\b/.test(n) && !/creatinine|ratio/.test(n)) return 'bun'
-  if (/urea/.test(n) && !/nitrogen|bun|creatinine|ratio/.test(n)) return 'urea'
-  if (/creatinine/.test(n) && !/bun|urea|ratio|clearance/.test(n)) return 'creatinine'
+  // Long BUN/Creatinine ratio (uses calculated BUN)
+  if (/nitrogen/.test(n) && /creatinine/.test(n)) return 'bun_crea_ratio'
+  if (/ratio/.test(n) && /bun|urea nitrogen/.test(n) && /creatinine/.test(n)) return 'bun_crea_ratio'
+  // Short "Bun / Creatinine" (uses Urea ÷ Creatinine in reference software)
+  if (/\bbun\b/.test(n) && /creatinine/.test(n) && !/nitrogen/.test(n)) return 'urea_crea_ratio'
+  if (/urea/.test(n) && /creatinine/.test(n)) return 'urea_crea_ratio'
+  if (/urea nitrogen|\bbun\b/.test(n) && !/creatinine/.test(n)) return 'bun'
+  if (/urea/.test(n) && !/nitrogen|bun|creatinine/.test(n)) return 'urea'
+  if (/creatinine/.test(n) && !/bun|urea|clearance/.test(n)) return 'creatinine'
   return null
 }
 
@@ -277,14 +285,13 @@ function lipidFieldKey(name) {
  * - Hb (Female or Male): RBC / PCV / MCV / MCH / MCHC (+ mirror generic Hb)
  * - Neutrophils / Lymphocytes: Monocytes / Eosinophils / Basophils (sum 100)
  * - WBC + DLC %: Absolute counts
- * - Protein Total + Albumin → Globulin (+ A/G ratio when present)
+ * - Protein + Albumin → Globulin + A/G (empty protein treated as 0)
  *   Example: Protein 6, Albumin 3 → Globulin 3.00, A/G 1.00
- *   Works for PROTEIN TOTAL / PROTEIN - TOTAL and ALBUMIN / ALBUMIN - SERUM
- * - Bilirubin Total + Direct/Conjugated → Indirect/Unconjugated
- *   Example: 1 − 0.20 → 0.80 (LFT) or 0.8 − 0.2 → 0.60
+ *   Example: Albumin 1 only → Globulin -1.00, A/G -1.00
+ * - Bilirubin Total + Direct → Indirect
  * - SGOT + SGPT → SGOT/SGPT Ratio
- * - Blood Urea → BUN (× 28/60); BUN/Creatinine ratio when creatinine present
- *   Example: Urea 40 → BUN 18.67
+ * - RFT: Urea → BUN (×28/60); BUN/Crea ratio; Urea/Crea ("Bun / Creatinine")
+ *   Example: Urea 15, Crea 1 → BUN 7.00, BUN/Crea 7.00, Urea/Crea 15.00
  * - Lipid profile (TC, HDL, TG):
  *   VLDL = TG / 5
  *   LDL = TC − HDL − VLDL
@@ -360,24 +367,29 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     })
   }
 
-  // --- Biochemistry: Globulin = Protein Total − Albumin; A/G = Albumin ÷ Globulin ---
+  // --- Protein: Globulin = Protein − Albumin; A/G = Albumin ÷ Globulin ---
+  // Empty inputs treated as 0 (matches reference lab software on RFT).
   const byProtein = {}
   list.forEach((r) => {
     const key = proteinFieldKey(r.name)
     if (key) byProtein[key] = r
   })
-  if (byProtein.protein && byProtein.albumin && byProtein.globulin) {
-    const protein = parseNumber(
-      byProtein.protein.id === changedId ? rawValue : next[byProtein.protein.id],
-    )
-    const albumin = parseNumber(
+  if (byProtein.albumin && byProtein.globulin) {
+    const proteinRaw = byProtein.protein
+      ? parseNumber(byProtein.protein.id === changedId ? rawValue : next[byProtein.protein.id])
+      : null
+    const albuminRaw = parseNumber(
       byProtein.albumin.id === changedId ? rawValue : next[byProtein.albumin.id],
     )
-    if (protein != null && albumin != null) {
+    if (proteinRaw != null || albuminRaw != null) {
+      const protein = proteinRaw ?? 0
+      const albumin = albuminRaw ?? 0
       const globulin = Number((protein - albumin).toFixed(2))
       next[byProtein.globulin.id] = formatIndianNumber(globulin.toFixed(2))
       if (byProtein.ag_ratio && globulin !== 0) {
         next[byProtein.ag_ratio.id] = formatIndianNumber((albumin / globulin).toFixed(2))
+      } else if (byProtein.ag_ratio && globulin === 0) {
+        next[byProtein.ag_ratio.id] = ''
       }
     }
   }
@@ -419,39 +431,35 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     }
   }
 
-  // --- RFT: BUN = Urea × 28/60; BUN/Creatinine ratio ---
+  // --- RFT calculations ---
   const byRenal = {}
   list.forEach((r) => {
     const key = renalFieldKey(r.name)
     if (key) byRenal[key] = r
   })
-  if (byRenal.urea && byRenal.bun) {
-    const urea = parseNumber(
-      byRenal.urea.id === changedId ? rawValue : next[byRenal.urea.id],
-    )
-    if (urea != null) {
-      // Molecular factor: BUN = Urea × (28/60) → 40 → 18.67
-      const bun = Number(((urea * 28) / 60).toFixed(2))
-      next[byRenal.bun.id] = formatIndianNumber(bun.toFixed(2))
-      if (byRenal.creatinine && byRenal.bun_crea_ratio) {
-        const crea = parseNumber(
-          byRenal.creatinine.id === changedId ? rawValue : next[byRenal.creatinine.id],
-        )
-        if (crea != null && crea !== 0) {
-          next[byRenal.bun_crea_ratio.id] = formatIndianNumber((bun / crea).toFixed(2))
-        }
-      }
-    }
-  } else if (byRenal.bun && byRenal.creatinine && byRenal.bun_crea_ratio) {
-    const bun = parseNumber(
-      byRenal.bun.id === changedId ? rawValue : next[byRenal.bun.id],
-    )
-    const crea = parseNumber(
-      byRenal.creatinine.id === changedId ? rawValue : next[byRenal.creatinine.id],
-    )
-    if (bun != null && crea != null && crea !== 0) {
-      next[byRenal.bun_crea_ratio.id] = formatIndianNumber((bun / crea).toFixed(2))
-    }
+  const readRenal = (key) => {
+    const row = byRenal[key]
+    if (!row) return null
+    return parseNumber(row.id === changedId ? rawValue : next[row.id])
+  }
+  let urea = readRenal('urea')
+  let bun = readRenal('bun')
+  const crea = readRenal('creatinine')
+
+  // BUN from Urea (always refresh when urea is set)
+  if (byRenal.urea && byRenal.bun && urea != null) {
+    bun = Number(((urea * 28) / 60).toFixed(2))
+    next[byRenal.bun.id] = formatIndianNumber(bun.toFixed(2))
+  }
+
+  // BLOOD UREA NITROGEN / CREATININE RATIO = BUN ÷ Creatinine
+  if (byRenal.bun_crea_ratio && bun != null && crea != null && crea !== 0) {
+    next[byRenal.bun_crea_ratio.id] = formatIndianNumber((bun / crea).toFixed(2))
+  }
+
+  // Short "Bun / Creatinine" = Urea ÷ Creatinine (reference software behaviour)
+  if (byRenal.urea_crea_ratio && urea != null && crea != null && crea !== 0) {
+    next[byRenal.urea_crea_ratio.id] = formatIndianNumber((urea / crea).toFixed(2))
   }
 
   // --- Lipid profile ---
