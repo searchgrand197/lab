@@ -133,39 +133,132 @@ function calcCbcFromHb(hb) {
   }
 }
 
+function dlcPercentKey(name) {
+  const n = normalizeParamName(name)
+  if (/absolute/.test(n)) return null
+  if (/neutrophil/.test(n)) return 'neutrophils'
+  if (/lymphocyte/.test(n)) return 'lymphocytes'
+  if (/monocyte/.test(n)) return 'monocytes'
+  if (/eosinophil/.test(n)) return 'eosinophils'
+  if (/basophil/.test(n)) return 'basophils'
+  return null
+}
+
+function dlcAbsoluteKey(name) {
+  const n = normalizeParamName(name)
+  if (!/absolute/.test(n)) return null
+  if (/neutrophil/.test(n)) return 'neutrophils'
+  if (/lymphocyte/.test(n)) return 'lymphocytes'
+  if (/monocyte/.test(n)) return 'monocytes'
+  if (/eosinophil/.test(n)) return 'eosinophils'
+  if (/basophil/.test(n)) return 'basophils'
+  return null
+}
+
+function isWbcParam(name) {
+  const n = normalizeParamName(name)
+  return /total leucocytes|wbc count|(^|\s)wbc(\s|$)|(^|\s)tlc(\s|$)/.test(n)
+}
+
+/** Lab-style 2-digit DLC percent: 50, 20, 18, 12, 00 */
+function formatDlcPercent(n) {
+  const v = Math.max(0, Math.round(Number(n) || 0))
+  return String(v).padStart(2, '0')
+}
+
 /**
- * Female and Male Hb use the same formulas.
- * Typing in either fills RBC / PCV / MCV / MCH / MCHC, and mirrors into generic HAEMOGLOBIN (Hb).
+ * After Neutrophils + Lymphocytes are entered, fill the rest to total 100%:
+ *   Basophils = 0
+ *   of remainder: Monocytes 60%, Eosinophils 40%
+ * Example: N=50, L=20 → M=18, E=12, B=00
  */
-function applyHbAutofill(results, values, changedId, hbRaw) {
-  const changed = (results || []).find((r) => r.id === changedId)
-  if (!changed || !isHaemoglobinParam(changed.name)) {
-    return { ...values, [changedId]: hbRaw }
+function calcDlcRemainder(neutrophils, lymphocytes) {
+  if (neutrophils == null || lymphocytes == null) return null
+  if (!Number.isFinite(neutrophils) || !Number.isFinite(lymphocytes)) return null
+  const rem = Math.round(100 - neutrophils - lymphocytes)
+  if (rem < 0) return null
+  const monocytes = Math.round(rem * 0.6)
+  const eosinophils = rem - monocytes
+  return {
+    monocytes: formatDlcPercent(monocytes),
+    eosinophils: formatDlcPercent(eosinophils),
+    basophils: formatDlcPercent(0),
+  }
+}
+
+/**
+ * CBC autofill:
+ * - Hb (Female or Male): RBC / PCV / MCV / MCH / MCHC (+ mirror generic Hb)
+ * - Neutrophils + Lymphocytes: Monocytes / Eosinophils / Basophils (sum 100)
+ * - WBC + DLC %: Absolute counts
+ */
+function applyCbcAutofill(results, values, changedId, rawValue) {
+  const list = results || []
+  const changed = list.find((r) => r.id === changedId)
+  let next = { ...values, [changedId]: rawValue }
+  if (!changed) return next
+
+  // --- Haemoglobin → red-cell indices (same for Female & Male) ---
+  if (isHaemoglobinParam(changed.name)) {
+    const changedNorm = normalizeParamName(changed.name)
+    const isGenderSpecific = /\bfemale\b|\bmale\b/.test(changedNorm)
+    list.forEach((r) => {
+      if (r.id === changedId || !isHaemoglobinParam(r.name)) return
+      const n = normalizeParamName(r.name)
+      const otherIsGender = /\bfemale\b|\bmale\b/.test(n)
+      if (isGenderSpecific && !otherIsGender) next[r.id] = rawValue
+    })
+    const derived = calcCbcFromHb(parseNumber(rawValue))
+    if (derived) {
+      list.forEach((r) => {
+        const key = cbcDerivedKey(r.name)
+        if (!key || !derived[key]) return
+        next[r.id] = formatIndianNumber(derived[key])
+      })
+    }
   }
 
-  const next = { ...values, [changedId]: hbRaw }
-  const changedNorm = normalizeParamName(changed.name)
-  const isGenderSpecific = /\bfemale\b|\bmale\b/.test(changedNorm)
+  // --- DLC: N + L filled → auto M / E / B ---
+  const byDlc = {}
+  list.forEach((r) => {
+    const key = dlcPercentKey(r.name)
+    if (key) byDlc[key] = r
+  })
+  const nVal = byDlc.neutrophils
+    ? parseNumber(byDlc.neutrophils.id === changedId ? rawValue : next[byDlc.neutrophils.id])
+    : null
+  const lVal = byDlc.lymphocytes
+    ? parseNumber(byDlc.lymphocytes.id === changedId ? rawValue : next[byDlc.lymphocytes.id])
+    : null
+  const dlcRest = calcDlcRemainder(nVal, lVal)
+  if (dlcRest) {
+    ;['monocytes', 'eosinophils', 'basophils'].forEach((key) => {
+      const row = byDlc[key]
+      if (!row) return
+      next[row.id] = dlcRest[key]
+    })
+  }
 
-  // Mirror into the generic Hb row only (do not overwrite the other gender field).
-  ;(results || []).forEach((r) => {
-    if (r.id === changedId || !isHaemoglobinParam(r.name)) return
-    const n = normalizeParamName(r.name)
-    const otherIsGender = /\bfemale\b|\bmale\b/.test(n)
-    if (isGenderSpecific && !otherIsGender) {
-      next[r.id] = hbRaw
+  // --- Absolute counts from WBC × % ---
+  const wbcRow = list.find((r) => isWbcParam(r.name))
+  const wbc = wbcRow
+    ? parseNumber(wbcRow.id === changedId ? rawValue : next[wbcRow.id])
+    : null
+  if (wbc != null && wbc > 0) {
+    const pct = {
+      neutrophils: nVal,
+      lymphocytes: lVal,
+      monocytes: byDlc.monocytes ? parseNumber(next[byDlc.monocytes.id]) : null,
+      eosinophils: byDlc.eosinophils ? parseNumber(next[byDlc.eosinophils.id]) : null,
+      basophils: byDlc.basophils ? parseNumber(next[byDlc.basophils.id]) : null,
     }
-  })
+    list.forEach((r) => {
+      const key = dlcAbsoluteKey(r.name)
+      if (!key || pct[key] == null) return
+      next[r.id] = formatIndianNumber(String(Math.round((wbc * pct[key]) / 100)))
+    })
+  }
 
-  const hbNum = parseNumber(hbRaw)
-  const derived = calcCbcFromHb(hbNum)
-  if (!derived) return next
-
-  ;(results || []).forEach((r) => {
-    const key = cbcDerivedKey(r.name)
-    if (!key || !derived[key]) return
-    next[r.id] = formatIndianNumber(derived[key])
-  })
   return next
 }
 
@@ -733,19 +826,19 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                                 } else if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
                                                   next = formatIndianNumber(cleaned)
                                                 }
-                                                setValues((v) => applyHbAutofill(entry.results, v, r.id, next))
+                                                setValues((v) => applyCbcAutofill(entry.results, v, r.id, next))
                                               }}
                                               onBlur={(e) => {
                                                 const formatted = formatIndianNumber(e.target.value)
                                                 dirtyRef.current = true
-                                                setValues((v) => applyHbAutofill(entry.results, v, r.id, formatted))
+                                                setValues((v) => applyCbcAutofill(entry.results, v, r.id, formatted))
                                               }}
                                               onKeyDown={(e) => {
                                                 if (e.key !== 'Enter') return
                                                 e.preventDefault()
                                                 const formatted = formatIndianNumber(e.currentTarget.value)
                                                 dirtyRef.current = true
-                                                setValues((v) => applyHbAutofill(entry.results, v, r.id, formatted))
+                                                setValues((v) => applyCbcAutofill(entry.results, v, r.id, formatted))
                                                 focusNextResultInput(e.currentTarget)
                                               }}
                                               placeholder="Enter result"
