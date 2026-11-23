@@ -226,6 +226,29 @@ function bilirubinFieldKey(name) {
 }
 
 /**
+ * Lipid profile fields.
+ * Inputs: TC, HDL, TG → VLDL, LDL, ratios, NON-HDL, Total Lipids
+ */
+function lipidFieldKey(name) {
+  const n = normalizeParamName(name)
+  if (/non hdl|nonhdl/.test(n)) return 'non_hdl'
+  if (/vldl/.test(n)) return 'vldl'
+  if (/ldl/.test(n) && /hdl/.test(n) && /ratio/.test(n)) return 'ldl_hdl_ratio'
+  if (/cholesterol/.test(n) && /hdl/.test(n) && /ratio/.test(n)) return 'tc_hdl_ratio'
+  if (/total lipid/.test(n)) return 'total_lipids'
+  if (/ldl/.test(n) && !/hdl|ratio|vldl/.test(n)) return 'ldl'
+  if (/hdl/.test(n) && !/ldl|ratio|non|vldl|total cholesterol/.test(n)) return 'hdl'
+  if (/triglyceride/.test(n)) return 'tg'
+  if (
+    (/total cholesterol/.test(n) || /serum cholesterol/.test(n) || n === 'cholesterol')
+    && !/hdl|ldl|ratio|vldl|non/.test(n)
+  ) {
+    return 'tc'
+  }
+  return null
+}
+
+/**
  * Lab autofill for CBC + Biochemistry:
  * - Hb (Female or Male): RBC / PCV / MCV / MCH / MCHC (+ mirror generic Hb)
  * - Neutrophils / Lymphocytes: Monocytes / Eosinophils / Basophils (sum 100)
@@ -234,6 +257,13 @@ function bilirubinFieldKey(name) {
  *   Example: Protein 7, Albumin 4 → Globulin 3.00
  * - Bilirubin Total + Conjugated → Unconjugated
  *   Example: 0.8 − 0.2 → 0.60
+ * - Lipid profile (TC, HDL, TG):
+ *   VLDL = TG / 5
+ *   LDL = TC − HDL − VLDL
+ *   NON-HDL = TC − HDL
+ *   TC/HDL, LDL/HDL ratios
+ *   Total Lipids = 2×TC + TG
+ *   Example: 200, 50, 150 → VLDL 30, LDL 120, ratios 4.00 / 2.40, NON-HDL 150, lipids 550
  */
 function applyCbcAutofill(results, values, changedId, rawValue) {
   const list = results || []
@@ -340,6 +370,53 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     if (total != null && conjugated != null) {
       const unconjugated = Number((total - conjugated).toFixed(2))
       next[byBili.unconjugated.id] = formatIndianNumber(unconjugated.toFixed(2))
+    }
+  }
+
+  // --- Lipid profile ---
+  const byLipid = {}
+  list.forEach((r) => {
+    const key = lipidFieldKey(r.name)
+    if (key) byLipid[key] = r
+  })
+  const hasLipidInputs = byLipid.tc || byLipid.hdl || byLipid.tg
+  const hasLipidOutputs = byLipid.ldl || byLipid.vldl || byLipid.non_hdl
+    || byLipid.tc_hdl_ratio || byLipid.ldl_hdl_ratio || byLipid.total_lipids
+  if (hasLipidInputs && hasLipidOutputs) {
+    const readLipid = (key) => {
+      const row = byLipid[key]
+      if (!row) return null
+      return parseNumber(row.id === changedId ? rawValue : next[row.id])
+    }
+    const tcRaw = readLipid('tc')
+    const hdlRaw = readLipid('hdl')
+    const tgRaw = readLipid('tg')
+    // Recalculate when any input is present (empty treated as 0, matching lab software).
+    if (tcRaw != null || hdlRaw != null || tgRaw != null) {
+      const tc = tcRaw ?? 0
+      const hdl = hdlRaw ?? 0
+      const tg = tgRaw ?? 0
+      const vldl = Number((tg / 5).toFixed(2))
+      const ldl = Number((tc - hdl - vldl).toFixed(2))
+      const nonHdl = Number((tc - hdl).toFixed(2))
+      const totalLipids = Number((2 * tc + tg).toFixed(2))
+
+      if (byLipid.vldl) next[byLipid.vldl.id] = formatIndianNumber(vldl.toFixed(2))
+      if (byLipid.ldl) next[byLipid.ldl.id] = formatIndianNumber(ldl.toFixed(2))
+      if (byLipid.non_hdl) next[byLipid.non_hdl.id] = formatIndianNumber(nonHdl.toFixed(2))
+      if (byLipid.total_lipids) {
+        next[byLipid.total_lipids.id] = formatIndianNumber(totalLipids.toFixed(2))
+      }
+      if (byLipid.tc_hdl_ratio) {
+        next[byLipid.tc_hdl_ratio.id] = hdl
+          ? formatIndianNumber((tc / hdl).toFixed(2))
+          : ''
+      }
+      if (byLipid.ldl_hdl_ratio) {
+        next[byLipid.ldl_hdl_ratio.id] = hdl
+          ? formatIndianNumber((ldl / hdl).toFixed(2))
+          : ''
+      }
     }
   }
 
