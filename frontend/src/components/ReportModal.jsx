@@ -258,6 +258,27 @@ function renalFieldKey(name) {
 }
 
 /**
+ * Prothrombin Time fields.
+ * Inputs: CONTROL, TEST, (optional ISI)
+ *   INDEX = Control / Test
+ *   PTI = (Control / Test) × 100
+ *   Patient Ratio = 100 / Test
+ *   INR = (Test / Control) ^ ISI  (ISI defaults to 1 if blank)
+ * Example: Control 12, Test 7 → Index 1.71, PTI 171.43, Ratio 14.29, INR 0.58
+ */
+function ptFieldKey(name) {
+  const n = normalizeParamName(name)
+  if (/^isi\b|isi value/.test(n)) return 'isi'
+  if (/^inr\b|\binr\b/.test(n)) return 'inr'
+  if (/^pti\b|\bpti\b|prothrombin time index/.test(n)) return 'pti'
+  if (/patient ratio|pt ratio/.test(n)) return 'patient_ratio'
+  if (/^index\b|\bindex\b/.test(n) && !/glyc|body|cardiac/.test(n)) return 'index'
+  if (/^control\b|\bcontrol\b/.test(n)) return 'control'
+  if (/^test\b|\btest\b/.test(n) && !/sensitivity|tolerance/.test(n)) return 'test'
+  return null
+}
+
+/**
  * Lipid profile fields.
  * Inputs: TC, HDL, TG → VLDL, LDL, ratios, NON-HDL, Total Lipids
  */
@@ -292,6 +313,8 @@ function lipidFieldKey(name) {
  * - SGOT + SGPT → SGOT/SGPT Ratio
  * - RFT: Urea → BUN (×28/60); BUN/Crea ratio; Urea/Crea ("Bun / Creatinine")
  *   Example: Urea 15, Crea 1 → BUN 7.00, BUN/Crea 7.00, Urea/Crea 15.00
+ * - Prothrombin Time: Control + Test → Index, PTI, Patient Ratio, INR
+ *   Example: Control 12, Test 7 → Index 1.71, PTI 171.43, Ratio 14.29, INR 0.58
  * - Lipid profile (TC, HDL, TG):
  *   VLDL = TG / 5
  *   LDL = TC − HDL − VLDL
@@ -460,6 +483,38 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
   // Short "Bun / Creatinine" = Urea ÷ Creatinine (reference software behaviour)
   if (byRenal.urea_crea_ratio && urea != null && crea != null && crea !== 0) {
     next[byRenal.urea_crea_ratio.id] = formatIndianNumber((urea / crea).toFixed(2))
+  }
+
+  // --- Prothrombin Time ---
+  const byPt = {}
+  list.forEach((r) => {
+    const key = ptFieldKey(r.name)
+    if (key) byPt[key] = r
+  })
+  if (byPt.control && byPt.test) {
+    const control = parseNumber(
+      byPt.control.id === changedId ? rawValue : next[byPt.control.id],
+    )
+    const test = parseNumber(
+      byPt.test.id === changedId ? rawValue : next[byPt.test.id],
+    )
+    const isiRaw = byPt.isi
+      ? parseNumber(byPt.isi.id === changedId ? rawValue : next[byPt.isi.id])
+      : null
+    if (control != null && test != null && test !== 0 && control !== 0) {
+      const index = Number((control / test).toFixed(2))
+      const pti = Number(((control / test) * 100).toFixed(2))
+      const patientRatio = Number((100 / test).toFixed(2))
+      const isi = isiRaw != null && isiRaw > 0 ? isiRaw : 1
+      const inr = Number((test / control) ** isi).toFixed(2)
+
+      if (byPt.index) next[byPt.index.id] = formatIndianNumber(index.toFixed(2))
+      if (byPt.pti) next[byPt.pti.id] = formatIndianNumber(pti.toFixed(2))
+      if (byPt.patient_ratio) {
+        next[byPt.patient_ratio.id] = formatIndianNumber(patientRatio.toFixed(2))
+      }
+      if (byPt.inr) next[byPt.inr.id] = formatIndianNumber(String(inr))
+    }
   }
 
   // --- Lipid profile ---
