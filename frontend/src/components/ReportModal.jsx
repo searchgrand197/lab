@@ -79,6 +79,74 @@ function cycleAgglutination(current) {
   return '+'
 }
 
+function normalizeParamName(name) {
+  return String(name || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+/** True for Hb / Haemoglobin fields (not MCH / MCHC / A1c). */
+function isHaemoglobinParam(name) {
+  const n = normalizeParamName(name)
+  if (/mchc|mch\b|a1c|glycosylated|mean cell|corpuscular/.test(n)) return false
+  return /\bhaemoglobin\b|\bhemoglobin\b|\bhb\b/.test(n)
+}
+
+/** Map CBC parameter → derived key from Hb. */
+function cbcDerivedKey(name) {
+  const n = normalizeParamName(name)
+  if (/\bmcv\b|mean cell volume/.test(n)) return 'mcv'
+  if (/\bmchc\b|corpuscular hb conc|mean corpuscular hb/.test(n)) return 'mchc'
+  if (/\bmch\b|mean cell haemoglobin|mean cell hemoglobin/.test(n)) return 'mch'
+  if (/packed cell volume|\bpcv\b|hematocrit|haematocrit/.test(n)) return 'pcv'
+  if (/red blood cells|\brbc count\b|\brbc\b/.test(n) && !/width|absolute|nucleated/.test(n)) return 'rbc'
+  return null
+}
+
+/**
+ * Rule-of-three CBC estimates from Hb (g/dL), matching common lab software:
+ *   PCV = Hb × 3
+ *   RBC = Hb ÷ 3
+ *   MCV = (PCV ÷ RBC) × 10
+ *   MCH = (Hb ÷ RBC) × 10
+ *   MCHC = (Hb ÷ PCV) × 100
+ * Example: Hb 14 → RBC 4.67, PCV 42.00, MCV 89.94, MCH 29.98, MCHC 33.33
+ */
+function calcCbcFromHb(hb) {
+  if (hb == null || !Number.isFinite(hb) || hb <= 0) return null
+  const pcv = hb * 3
+  const rbc = hb / 3
+  if (rbc <= 0 || pcv <= 0) return null
+  return {
+    rbc: rbc.toFixed(2),
+    pcv: pcv.toFixed(2),
+    mcv: ((pcv / rbc) * 10).toFixed(2),
+    mch: ((hb / rbc) * 10).toFixed(2),
+    mchc: ((hb / pcv) * 100).toFixed(2),
+  }
+}
+
+/** When an Hb result changes, fill RBC / PCV / MCV / MCH / MCHC on the same test. */
+function applyHbAutofill(results, values, changedId, hbRaw) {
+  const changed = (results || []).find((r) => r.id === changedId)
+  if (!changed || !isHaemoglobinParam(changed.name)) {
+    return { ...values, [changedId]: hbRaw }
+  }
+
+  const next = { ...values, [changedId]: hbRaw }
+  const hbNum = parseNumber(hbRaw)
+  const derived = calcCbcFromHb(hbNum)
+  if (!derived) return next
+
+  ;(results || []).forEach((r) => {
+    const key = cbcDerivedKey(r.name)
+    if (!key || !derived[key]) return
+    next[r.id] = formatIndianNumber(derived[key])
+  })
+  return next
+}
+
 /** Returns 'in' | 'high' | 'low' | null when range cannot be compared. */
 function evaluateResultRange(value, referenceRange) {
   const num = parseNumber(value)
@@ -643,22 +711,19 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                                 } else if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
                                                   next = formatIndianNumber(cleaned)
                                                 }
-                                                setValues((v) => ({ ...v, [r.id]: next }))
+                                                setValues((v) => applyHbAutofill(entry.results, v, r.id, next))
                                               }}
                                               onBlur={(e) => {
                                                 const formatted = formatIndianNumber(e.target.value)
-                                                if (formatted === e.target.value) return
                                                 dirtyRef.current = true
-                                                setValues((v) => ({ ...v, [r.id]: formatted }))
+                                                setValues((v) => applyHbAutofill(entry.results, v, r.id, formatted))
                                               }}
                                               onKeyDown={(e) => {
                                                 if (e.key !== 'Enter') return
                                                 e.preventDefault()
                                                 const formatted = formatIndianNumber(e.currentTarget.value)
-                                                if (formatted !== e.currentTarget.value) {
-                                                  dirtyRef.current = true
-                                                  setValues((v) => ({ ...v, [r.id]: formatted }))
-                                                }
+                                                dirtyRef.current = true
+                                                setValues((v) => applyHbAutofill(entry.results, v, r.id, formatted))
                                                 focusNextResultInput(e.currentTarget)
                                               }}
                                               placeholder="Enter result"
