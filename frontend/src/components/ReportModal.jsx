@@ -86,11 +86,16 @@ function normalizeParamName(name) {
     .trim()
 }
 
-/** True for Hb / Haemoglobin fields (not MCH / MCHC / A1c). */
+/** True for any Hb entry field — Female, Male, or generic (not MCH / MCHC / A1c). */
 function isHaemoglobinParam(name) {
   const n = normalizeParamName(name)
   if (/mchc|mch\b|a1c|glycosylated|mean cell|corpuscular/.test(n)) return false
-  return /\bhaemoglobin\b|\bhemoglobin\b|\bhb\b/.test(n)
+  // Same trigger for "Haemoglobin (Female)", "Haemoglobin (Male)", "HAEMOGLOBIN (Hb)", etc.
+  return (
+    /\bhaemoglobin\b/.test(n)
+    || /\bhemoglobin\b/.test(n)
+    || /(^|\s)hb(\s|$)/.test(n)
+  )
 }
 
 /** Map CBC parameter → derived key from Hb. */
@@ -128,7 +133,10 @@ function calcCbcFromHb(hb) {
   }
 }
 
-/** When an Hb result changes, fill RBC / PCV / MCV / MCH / MCHC on the same test. */
+/**
+ * Female and Male Hb use the same formulas.
+ * Typing in either fills RBC / PCV / MCV / MCH / MCHC, and mirrors into generic HAEMOGLOBIN (Hb).
+ */
 function applyHbAutofill(results, values, changedId, hbRaw) {
   const changed = (results || []).find((r) => r.id === changedId)
   if (!changed || !isHaemoglobinParam(changed.name)) {
@@ -136,6 +144,19 @@ function applyHbAutofill(results, values, changedId, hbRaw) {
   }
 
   const next = { ...values, [changedId]: hbRaw }
+  const changedNorm = normalizeParamName(changed.name)
+  const isGenderSpecific = /\bfemale\b|\bmale\b/.test(changedNorm)
+
+  // Mirror into the generic Hb row only (do not overwrite the other gender field).
+  ;(results || []).forEach((r) => {
+    if (r.id === changedId || !isHaemoglobinParam(r.name)) return
+    const n = normalizeParamName(r.name)
+    const otherIsGender = /\bfemale\b|\bmale\b/.test(n)
+    if (isGenderSpecific && !otherIsGender) {
+      next[r.id] = hbRaw
+    }
+  })
+
   const hbNum = parseNumber(hbRaw)
   const derived = calcCbcFromHb(hbNum)
   if (!derived) return next
