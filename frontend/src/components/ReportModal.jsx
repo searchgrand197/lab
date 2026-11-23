@@ -257,6 +257,16 @@ function renalFieldKey(name) {
   return null
 }
 
+/** HbA1c → Estimated Average Glucose (eAG = 28.7 × A1c − 46.7). */
+function hba1cFieldKey(name) {
+  const n = normalizeParamName(name)
+  if (/estimated average glucose|\beag\b/.test(n)) return 'eag'
+  if (/glycosylated|hba1c|hb a1c|hemoglobin a1c|haemoglobin a1c|\ba1c\b/.test(n)) {
+    return 'a1c'
+  }
+  return null
+}
+
 /**
  * Prothrombin Time fields.
  * Inputs: CONTROL, TEST, (optional ISI)
@@ -315,6 +325,8 @@ function lipidFieldKey(name) {
  *   Example: Urea 15, Crea 1 → BUN 7.00, BUN/Crea 7.00, Urea/Crea 15.00
  * - Prothrombin Time: Control + Test → Index, PTI, Patient Ratio, INR
  *   Example: Control 12, Test 7 → Index 1.71, PTI 171.43, Ratio 14.29, INR 0.58
+ * - HbA1c → Estimated Average Glucose (28.7 × A1c − 46.7)
+ *   Example: A1c 5 → eAG 96.80
  * - Lipid profile (TC, HDL, TG):
  *   VLDL = TG / 5
  *   LDL = TC − HDL − VLDL
@@ -483,6 +495,23 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
   // Short "Bun / Creatinine" = Urea ÷ Creatinine (reference software behaviour)
   if (byRenal.urea_crea_ratio && urea != null && crea != null && crea !== 0) {
     next[byRenal.urea_crea_ratio.id] = formatIndianNumber((urea / crea).toFixed(2))
+  }
+
+  // --- HbA1c → Estimated Average Glucose ---
+  const byA1c = {}
+  list.forEach((r) => {
+    const key = hba1cFieldKey(r.name)
+    if (key) byA1c[key] = r
+  })
+  if (byA1c.a1c && byA1c.eag) {
+    const a1c = parseNumber(
+      byA1c.a1c.id === changedId ? rawValue : next[byA1c.a1c.id],
+    )
+    if (a1c != null) {
+      // ADA formula: eAG (mg/dL) = 28.7 × A1c − 46.7
+      const eag = Number((28.7 * a1c - 46.7).toFixed(2))
+      next[byA1c.eag.id] = formatIndianNumber(eag.toFixed(2))
+    }
   }
 
   // --- Prothrombin Time ---
