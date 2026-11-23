@@ -339,7 +339,9 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
   const list = results || []
   const changed = list.find((r) => r.id === changedId)
   let next = { ...values, [changedId]: rawValue }
-  if (!changed) return next
+  if (!changed) return { values: next, autofilledIds: [] }
+  // Snapshot after applying the manual edit — anything else that changes is autofill.
+  const afterManual = { ...next }
 
   // --- Haemoglobin → red-cell indices (same for Female & Male) ---
   if (isHaemoglobinParam(changed.name)) {
@@ -593,7 +595,13 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     }
   }
 
-  return next
+  const autofilledIds = Object.keys(next)
+    .filter((key) => String(key) !== String(changedId) && next[key] !== afterManual[key])
+    .map((key) => {
+      const n = Number(key)
+      return Number.isFinite(n) ? n : key
+    })
+  return { values: next, autofilledIds }
 }
 
 /** Returns 'in' | 'high' | 'low' | null when range cannot be compared. */
@@ -651,7 +659,33 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
   const [booking, setBooking] = useState(null)
   const [filter, setFilter] = useState('')
   const [values, setValues] = useState({})
+  const [autofilledIds, setAutofilledIds] = useState(() => new Set())
   const [status, setStatus] = useState('booked')
+
+  function applyResultChange(results, changedId, rawValue) {
+    setValues((prev) => {
+      const { values: next, autofilledIds: filled } = applyCbcAutofill(
+        results,
+        prev,
+        changedId,
+        rawValue,
+      )
+      // Schedule after this updater so we don't nest setState calls.
+      queueMicrotask(() => {
+        setAutofilledIds((prevFilled) => {
+          const nextFilled = new Set(prevFilled)
+          nextFilled.delete(changedId)
+          nextFilled.delete(String(changedId))
+          filled.forEach((id) => {
+            nextFilled.add(id)
+            nextFilled.add(String(id))
+          })
+          return nextFilled
+        })
+      })
+      return next
+    })
+  }
   const [openPanels, setOpenPanels] = useState(() => new Set())
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
@@ -681,7 +715,10 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
   function applyBooking(detail, preferOpenId, { syncValues = true } = {}) {
     setBooking(detail)
     setStatus(detail.status || 'booked')
-    if (syncValues) setValues(valuesFromBooking(detail))
+    if (syncValues) {
+      setValues(valuesFromBooking(detail))
+      setAutofilledIds(new Set())
+    }
     // Keep accordions collapsed by default; only open a panel the user just added.
     if (preferOpenId) {
       setOpenPanels((prev) => new Set(prev).add(Number(preferOpenId)))
@@ -1147,7 +1184,19 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                         <td>
                                           <div className="result-value-wrap">
                                             <input
-                                              className={`field-input result-input ${rangeState === 'in' ? 'result-in-range' : ''} ${outClass}`}
+                                              className={[
+                                                'field-input',
+                                                'result-input',
+                                                autofilledIds.has(r.id) || autofilledIds.has(String(r.id))
+                                                  ? 'result-autofilled'
+                                                  : '',
+                                                !autofilledIds.has(r.id) && !autofilledIds.has(String(r.id)) && rangeState === 'in'
+                                                  ? 'result-in-range'
+                                                  : '',
+                                                !autofilledIds.has(r.id) && !autofilledIds.has(String(r.id)) && outClass
+                                                  ? outClass
+                                                  : '',
+                                              ].filter(Boolean).join(' ')}
                                               value={current}
                                               inputMode="decimal"
                                               onChange={(e) => {
@@ -1160,27 +1209,27 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                                 } else if (/^-?\d+(\.\d+)?$/.test(cleaned)) {
                                                   next = formatIndianNumber(cleaned)
                                                 }
-                                                setValues((v) => applyCbcAutofill(entry.results, v, r.id, next))
+                                                applyResultChange(entry.results, r.id, next)
                                               }}
                                               onBlur={(e) => {
                                                 const formatted = formatIndianNumber(e.target.value)
                                                 dirtyRef.current = true
-                                                setValues((v) => applyCbcAutofill(entry.results, v, r.id, formatted))
+                                                applyResultChange(entry.results, r.id, formatted)
                                               }}
                                               onKeyDown={(e) => {
                                                 if (e.key !== 'Enter') return
                                                 e.preventDefault()
                                                 const formatted = formatIndianNumber(e.currentTarget.value)
                                                 dirtyRef.current = true
-                                                setValues((v) => applyCbcAutofill(entry.results, v, r.id, formatted))
+                                                applyResultChange(entry.results, r.id, formatted)
                                                 focusNextResultInput(e.currentTarget)
                                               }}
                                               placeholder="Enter result"
                                             />
-                                            {rangeState === 'in' ? (
+                                            {!autofilledIds.has(r.id) && !autofilledIds.has(String(r.id)) && rangeState === 'in' ? (
                                               <span className="result-flag result-flag-ok" title="Within range">✓</span>
                                             ) : null}
-                                            {rangeState === 'high' || rangeState === 'low' ? (
+                                            {!autofilledIds.has(r.id) && !autofilledIds.has(String(r.id)) && (rangeState === 'high' || rangeState === 'low') ? (
                                               <span
                                                 className="result-flag result-flag-bad"
                                                 title={rangeState === 'high' ? 'Above range' : 'Below range'}
