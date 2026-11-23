@@ -167,15 +167,21 @@ function formatDlcPercent(n) {
 }
 
 /**
- * After Neutrophils + Lymphocytes are entered, fill the rest to total 100%:
+ * Fill Monocytes / Eosinophils / Basophils so DLC totals 100%.
+ * Works when Neutrophils and/or Lymphocytes are entered (missing treated as 0):
  *   Basophils = 0
  *   of remainder: Monocytes 60%, Eosinophils 40%
- * Example: N=50, L=20 → M=18, E=12, B=00
+ * Examples:
+ *   N=50, L=20 → M=18, E=12, B=00
+ *   L=40 only  → M=36, E=24, B=00
  */
 function calcDlcRemainder(neutrophils, lymphocytes) {
-  if (neutrophils == null || lymphocytes == null) return null
-  if (!Number.isFinite(neutrophils) || !Number.isFinite(lymphocytes)) return null
-  const rem = Math.round(100 - neutrophils - lymphocytes)
+  const hasN = neutrophils != null && Number.isFinite(neutrophils)
+  const hasL = lymphocytes != null && Number.isFinite(lymphocytes)
+  if (!hasN && !hasL) return null
+  const n = hasN ? neutrophils : 0
+  const l = hasL ? lymphocytes : 0
+  const rem = Math.round(100 - n - l)
   if (rem < 0) return null
   const monocytes = Math.round(rem * 0.6)
   const eosinophils = rem - monocytes
