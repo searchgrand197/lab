@@ -22,13 +22,13 @@ function nowLocal() {
   return toLocalInput(new Date())
 }
 
-const PATIENT_TITLES = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Master', 'Dr.', 'Baby', 'B/O', 'Smt.', 'Shri', '']
+const PATIENT_TITLES = ['', 'Mr.', 'Mrs.', 'Ms.', 'Miss', 'Master', 'Dr.', 'Baby', 'B/O', 'Smt.', 'Shri']
 
 function blankForm() {
   const now = nowLocal()
   return {
     patient_id: null,
-    title: 'Mr.',
+    title: '',
     name: '',
     age: '',
     gender: 'M',
@@ -244,7 +244,7 @@ export default function BookTest() {
     setForm((f) => ({
       ...f,
       patient_id: p.id,
-      title: p.title || 'Mr.',
+      title: p.title || '',
       name: p.name || '',
       age: p.age ?? '',
       gender: p.gender || 'M',
