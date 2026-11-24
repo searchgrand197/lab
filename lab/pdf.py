@@ -13,6 +13,7 @@ from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
+    Flowable,
     HRFlowable,
     KeepTogether,
     Paragraph,
@@ -34,14 +35,48 @@ class ActualSizeCanvas(pdfcanvas.Canvas):
         self.setViewerPreference('PrintScaling', 'None')
 
 
+class TranslucentBand(Flowable):
+    """Draw a translucent filled rectangle, then the inner flowable on top.
+
+    Table BACKGROUND alpha is ignored by many PDF viewers; canvas fill opacity works.
+    """
+
+    def __init__(self, inner, fill_rgb=(0.82, 0.82, 0.82), alpha=0.55, stroke=True):
+        super().__init__()
+        self.inner = inner
+        self.fill_rgb = fill_rgb
+        self.alpha = alpha
+        self.stroke = stroke
+        self._width = 0
+        self._height = 0
+
+    def wrap(self, availWidth, availHeight):
+        self._width, self._height = self.inner.wrap(availWidth, availHeight)
+        return self._width, self._height
+
+    def draw(self):
+        c = self.canv
+        c.saveState()
+        c.setFillColorRGB(*self.fill_rgb)
+        if hasattr(c, 'setFillAlpha'):
+            c.setFillAlpha(self.alpha)
+        c.rect(0, 0, self._width, self._height, stroke=0, fill=1)
+        if self.stroke:
+            c.setStrokeColor(INK)
+            c.setLineWidth(0.7)
+            if hasattr(c, 'setStrokeAlpha'):
+                c.setStrokeAlpha(0.55)
+            c.rect(0, 0, self._width, self._height, stroke=1, fill=0)
+        c.restoreState()
+        self.inner.drawOn(c, 0, 0)
+
+
 # Pure B/W palette — colour printers are fine; mono printers stay crisp.
 INK = colors.black
 MUTED = colors.HexColor('#222222')
 LINE = colors.black
-# Patient card: soft white so letterhead still peeks through.
-HEADER_BG = colors.Color(1, 1, 1, alpha=0.72)
-# Column titles (Test Description / Result / Unit / Range): translucent band.
-COL_HEADER_BG = colors.Color(0.88, 0.88, 0.88, alpha=0.45)
+# Patient card fill (opaque fallback; translucent drawn via TranslucentBand when wrapped).
+HEADER_BG = colors.Color(1, 1, 1, alpha=0.75)
 GREEN = INK  # kept for any legacy refs; print uses black
 RED = INK
 
@@ -248,6 +283,16 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         textColor=INK,
         leading=12,
     )
+    param_method = ParagraphStyle(
+        'ParamMethod',
+        parent=styles['Normal'],
+        fontName='Times-Roman',
+        fontSize=7.5,
+        textColor=MUTED,
+        leading=9,
+        spaceBefore=0,
+        spaceAfter=0,
+    )
     result_normal = ParagraphStyle(
         'ResultNormal',
         parent=styles['Normal'],
@@ -355,20 +400,19 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         t.setStyle(
             TableStyle(
                 [
-                    ('BACKGROUND', (0, 0), (-1, 0), COL_HEADER_BG),
-                    ('BOX', (0, 0), (-1, 0), 0.6, colors.Color(0, 0, 0, alpha=0.35)),
+                    # No Table BACKGROUND — translucent fill is drawn by TranslucentBand.
                     ('LINEBELOW', (0, 0), (-1, 0), 1.25, LINE),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 3),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-                    ('TOPPADDING', (0, 0), (-1, -1), 3.5),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+                    ('TOPPADDING', (0, 0), (-1, -1), 4),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
                     ('ALIGN', (1, 0), (2, 0), 'CENTER'),
                     ('ALIGN', (3, 0), (3, 0), 'RIGHT'),
                 ]
             )
         )
-        return t
+        return TranslucentBand(t, fill_rgb=(0.78, 0.78, 0.78), alpha=0.5, stroke=True)
 
     def _widal_flowable(all_results):
         by_name = {r.parameter.name: r for r in all_results}
@@ -449,15 +493,30 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             method = resolve_param_method(param)
             name_text = xml_escape(param.name.upper())
             if method:
-                name_para = Paragraph(
-                    f'{name_text}<br/><font size="7">({xml_escape(method)})</font>',
-                    param_name,
+                # Nested table keeps method on its own line (font tags are unreliable in some viewers).
+                name_cell = Table(
+                    [
+                        [Paragraph(name_text, param_name)],
+                        [Paragraph(f'({xml_escape(method)})', param_method)],
+                    ],
+                    colWidths=[col_desc],
+                )
+                name_cell.setStyle(
+                    TableStyle(
+                        [
+                            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+                            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+                            ('TOPPADDING', (0, 0), (-1, -1), 0),
+                            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                        ]
+                    )
                 )
             else:
-                name_para = Paragraph(name_text, param_name)
+                name_cell = Paragraph(name_text, param_name)
             rows.append(
                 [
-                    name_para,
+                    name_cell,
                     result_para,
                     Paragraph((param.unit or '').upper(), unit_style),
                     Paragraph(param.reference_range or '', range_style),
@@ -584,11 +643,11 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                     ('RIGHTPADDING', (0, 0), (-1, -1), 6),
                     ('TOPPADDING', (0, 0), (-1, -1), 6),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-                    ('BACKGROUND', (0, 0), (-1, -1), HEADER_BG),
                 ]
             )
         )
-        return header
+        # Soft white panel so letterhead shows through (table BACKGROUND alpha is ignored).
+        return TranslucentBand(header, fill_rgb=(1, 1, 1), alpha=0.78, stroke=False)
 
     # Reserve vertical space so the same patient header can be drawn on every page.
     repeating_header_h = 0
