@@ -805,13 +805,58 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
 
 
 def evaluate_result_range(value, reference_range):
-    """Return 'in' | 'high' | 'low' | None when range cannot be compared."""
+    """Return 'in' | 'high' | 'low' | None when range cannot be compared.
+
+    Lipid wording (Desirable / Normal / Optimal / Major risk) is judged from
+    the cutoff number, so a typed 180 does not need a < or > sign.
+    """
     num = _parse_number(value)
     if num is None:
         return None
     range_text = str(reference_range or '').strip()
     if not range_text:
         return None
+
+    major_risk = re.search(r'major risk\s*:\s*[<≤]\s*(-?\d+(?:\.\d+)?)', range_text, re.I)
+    if major_risk:
+        limit = _parse_number(major_risk.group(1))
+        if limit is None:
+            return None
+        return 'low' if num < limit else 'in'
+
+    good_upto = re.search(
+        r'(?:desirable|normal|optimal)\s*:\s*(?:upto|up to)\s*(-?\d+(?:\.\d+)?)',
+        range_text,
+        re.I,
+    )
+    if good_upto:
+        limit = _parse_number(good_upto.group(1))
+        if limit is None:
+            return None
+        return 'in' if num <= limit else 'high'
+
+    good_less = re.search(
+        r'(?:desirable|normal|optimal)\s*:\s*[<≤]\s*(-?\d+(?:\.\d+)?)',
+        range_text,
+        re.I,
+    )
+    if good_less:
+        limit = _parse_number(good_less.group(1))
+        if limit is None:
+            return None
+        return 'in' if num < limit else 'high'
+
+    good_greater = re.search(
+        r'(?:desirable|normal|optimal|negative risk)\s*:\s*([>≥]|>=)\s*(-?\d+(?:\.\d+)?)',
+        range_text,
+        re.I,
+    )
+    if good_greater:
+        limit = _parse_number(good_greater.group(2))
+        if limit is None:
+            return None
+        inclusive = good_greater.group(1) in ('≥', '>=')
+        return 'in' if (num >= limit if inclusive else num > limit) else 'low'
 
     between = re.search(r'(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)', range_text, re.I)
     if between:
@@ -861,7 +906,7 @@ def evaluate_result_range(value, reference_range):
 def _parse_number(raw):
     if raw is None or raw == '':
         return None
-    cleaned = str(raw).replace(',', '').strip()
+    cleaned = re.sub(r'^[<≤>≥]=?\s*', '', str(raw).replace(',', '').strip())
     if not cleaned:
         return None
     try:
@@ -874,7 +919,7 @@ def _format_indian_number(raw):
     """Format numeric results in Indian style: 198000 → 1,98,000."""
     if raw is None:
         return ''
-    text = str(raw).strip()
+    text = re.sub(r'^[<≤>≥]=?\s*', '', str(raw).strip())
     if not text:
         return ''
     cleaned = text.replace(',', '')

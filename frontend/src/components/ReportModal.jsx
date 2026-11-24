@@ -46,10 +46,18 @@ function valuesFromBooking(detail) {
 
 function parseNumber(raw) {
   if (raw == null || raw === '') return null
-  const cleaned = String(raw).replace(/,/g, '').trim()
+  const cleaned = String(raw).replace(/,/g, '').trim().replace(/^[<≤>≥]=?\s*/, '')
   if (!cleaned) return null
   const num = Number(cleaned)
   return Number.isFinite(num) ? num : null
+}
+
+/** Drop a leading < or > so lipid results can be stored as the number alone. */
+function bareNumericResult(raw) {
+  const text = String(raw ?? '').trim()
+  const stripped = text.replace(/^[<≤>≥]=?\s*/, '')
+  if (stripped !== text && /^-?\d+(\.\d+)?$/.test(stripped.replace(/,/g, ''))) return stripped
+  return text
 }
 
 const WIDAL_ROWS = [
@@ -604,12 +612,44 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
   return { values: next, autofilledIds }
 }
 
-/** Returns 'in' | 'high' | 'low' | null when range cannot be compared. */
+/** Returns 'in' | 'high' | 'low' | null when range cannot be compared.
+ *  Lipid bands (Desirable / Normal / Optimal / Major risk) use that cutoff,
+ *  so the user types 180 — not <180 or >180.
+ */
 function evaluateResultRange(value, referenceRange) {
   const num = parseNumber(value)
   if (num == null) return null
   const range = String(referenceRange || '').trim()
   if (!range) return null
+
+  const majorRisk = range.match(/major risk\s*:\s*[<≤]\s*(-?\d+(?:\.\d+)?)/i)
+  if (majorRisk) {
+    const limit = parseNumber(majorRisk[1])
+    if (limit == null) return null
+    return num < limit ? 'low' : 'in'
+  }
+
+  const goodUpto = range.match(/(?:desirable|normal|optimal)\s*:\s*(?:upto|up to)\s*(-?\d+(?:\.\d+)?)/i)
+  if (goodUpto) {
+    const limit = parseNumber(goodUpto[1])
+    if (limit == null) return null
+    return num <= limit ? 'in' : 'high'
+  }
+
+  const goodLess = range.match(/(?:desirable|normal|optimal)\s*:\s*[<≤]\s*(-?\d+(?:\.\d+)?)/i)
+  if (goodLess) {
+    const limit = parseNumber(goodLess[1])
+    if (limit == null) return null
+    return num < limit ? 'in' : 'high'
+  }
+
+  const goodGreater = range.match(/(?:desirable|normal|optimal|negative risk)\s*:\s*[>≥]\s*(-?\d+(?:\.\d+)?)/i)
+  if (goodGreater) {
+    const limit = parseNumber(goodGreater[1])
+    if (limit == null) return null
+    const inclusive = /[≥]|>=/.test(goodGreater[0])
+    return (inclusive ? num >= limit : num > limit) ? 'in' : 'low'
+  }
 
   const between = range.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i)
   if (between) {
@@ -1250,7 +1290,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                               onChange={(e) => {
                                                 dirtyRef.current = true
                                                 setError('')
-                                                const cleaned = e.target.value.replace(/,/g, '')
+                                                const cleaned = bareNumericResult(e.target.value).replace(/,/g, '')
                                                 let next = e.target.value
                                                 if (cleaned === '' || cleaned === '-' || /^-?\d+\.$/.test(cleaned)) {
                                                   next = cleaned
@@ -1260,14 +1300,14 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                                 applyResultChange(entry.results, r.id, next)
                                               }}
                                               onBlur={(e) => {
-                                                const formatted = formatIndianNumber(e.target.value)
+                                                const formatted = formatIndianNumber(bareNumericResult(e.target.value))
                                                 dirtyRef.current = true
                                                 applyResultChange(entry.results, r.id, formatted)
                                               }}
                                               onKeyDown={(e) => {
                                                 if (e.key !== 'Enter') return
                                                 e.preventDefault()
-                                                const formatted = formatIndianNumber(e.currentTarget.value)
+                                                const formatted = formatIndianNumber(bareNumericResult(e.currentTarget.value))
                                                 dirtyRef.current = true
                                                 applyResultChange(entry.results, r.id, formatted)
                                                 focusNextResultInput(e.currentTarget)
