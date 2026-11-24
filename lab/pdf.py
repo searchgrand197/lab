@@ -42,6 +42,11 @@ HEADER_BG = colors.white
 GREEN = INK  # kept for any legacy refs; print uses black
 RED = INK
 
+# Match classic lab printouts (Times / Times New Roman serif).
+FONT = 'Times-Roman'
+FONT_BOLD = 'Times-Bold'
+FONT_ITALIC = 'Times-Italic'
+
 
 A4_W_MM = 210.0
 A4_H_MM = 297.0
@@ -197,7 +202,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     lab_title = ParagraphStyle(
         'LabTitle',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName='Times-Bold',
         fontSize=16,
         textColor=INK,
         alignment=1,
@@ -206,7 +211,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     lab_sub = ParagraphStyle(
         'LabSub',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=9,
         textColor=INK,
         alignment=1,
@@ -215,7 +220,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     meta_label = ParagraphStyle(
         'MetaLabel',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=9,
         textColor=INK,
         leading=12,
@@ -223,7 +228,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     col_head = ParagraphStyle(
         'ColHead',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName='Times-Bold',
         fontSize=10,
         textColor=INK,
         leading=12,
@@ -231,8 +236,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     test_head = ParagraphStyle(
         'TestHead',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=10.5,
+        fontName='Times-Bold',
+        fontSize=11,
         textColor=INK,
         leading=13,
         spaceBefore=2,
@@ -241,15 +246,15 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     param_name = ParagraphStyle(
         'ParamName',
         parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=9,
+        fontName='Times-Roman',
+        fontSize=10,
         textColor=INK,
-        leading=11,
+        leading=12,
     )
     result_normal = ParagraphStyle(
         'ResultNormal',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=9.5,
         textColor=INK,
         alignment=1,
@@ -258,7 +263,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     result_in = ParagraphStyle(
         'ResultIn',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=9.5,
         textColor=INK,
         alignment=1,
@@ -267,7 +272,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     result_out = ParagraphStyle(
         'ResultOut',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=9.5,
         textColor=INK,
         alignment=1,
@@ -276,7 +281,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     unit_style = ParagraphStyle(
         'Unit',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=8.5,
         textColor=INK,
         alignment=1,
@@ -285,7 +290,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     range_style = ParagraphStyle(
         'Range',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=8.5,
         textColor=INK,
         alignment=2,
@@ -299,7 +304,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     end_style = ParagraphStyle(
         'End',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName='Times-Bold',
         fontSize=10,
         textColor=INK,
         alignment=1,
@@ -309,7 +314,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     sign_style = ParagraphStyle(
         'Sign',
         parent=styles['Normal'],
-        fontName='Helvetica',
+        fontName='Times-Roman',
         fontSize=9,
         textColor=INK,
         alignment=2,
@@ -371,7 +376,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         cell_style = ParagraphStyle(
             'WidalCell',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
+            fontName='Times-Bold',
             fontSize=12,
             alignment=1,
             textColor=INK,
@@ -380,7 +385,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         label_style = ParagraphStyle(
             'WidalLabel',
             parent=styles['Normal'],
-            fontName='Helvetica',
+            fontName='Times-Roman',
             fontSize=8,
             alignment=0,
             textColor=INK,
@@ -662,13 +667,13 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         mid_x = (layout['left'] + plate_right) / 2
         canvas.setFillColor(MUTED)
         if layout['footer_h'] >= 10 * mm:
-            canvas.setFont('Helvetica-Oblique', 7)
+            canvas.setFont('Times-Italic', 7)
             canvas.drawCentredString(
                 mid_x,
                 footer_y + 4.2 * mm,
                 'This is a computer-generated report from Khalsa Clinical Laboratory.',
             )
-        canvas.setFont('Helvetica', 8)
+        canvas.setFont('Times-Roman', 8)
         canvas.drawString(layout['left'], footer_y, f'{booking.report_no or ""} · {patient.display_name}')
         canvas.drawRightString(plate_right, footer_y, f'Page {doc_.page}')
 
@@ -676,9 +681,9 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         y_cursor = page_h - layout['top']
         if cfg.show_lab_title:
             canvas.setFillColor(INK)
-            canvas.setFont('Helvetica-Bold', 14)
+            canvas.setFont('Times-Bold', 14)
             canvas.drawCentredString(mid_x, y_cursor - 14, lab_name)
-            canvas.setFont('Helvetica', 8)
+            canvas.setFont('Times-Roman', 8)
             canvas.drawCentredString(mid_x, y_cursor - 26, 'Laboratory Investigation Report')
             y_cursor -= 30
         header = _build_patient_header()
