@@ -38,7 +38,10 @@ class ActualSizeCanvas(pdfcanvas.Canvas):
 INK = colors.black
 MUTED = colors.HexColor('#222222')
 LINE = colors.black
-HEADER_BG = colors.white
+# Patient card: soft white so letterhead still peeks through.
+HEADER_BG = colors.Color(1, 1, 1, alpha=0.72)
+# Column titles (Test Description / Result / Unit / Range): translucent band.
+COL_HEADER_BG = colors.Color(0.88, 0.88, 0.88, alpha=0.45)
 GREEN = INK  # kept for any legacy refs; print uses black
 RED = INK
 
@@ -352,6 +355,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         t.setStyle(
             TableStyle(
                 [
+                    ('BACKGROUND', (0, 0), (-1, 0), COL_HEADER_BG),
+                    ('BOX', (0, 0), (-1, 0), 0.6, colors.Color(0, 0, 0, alpha=0.35)),
                     ('LINEBELOW', (0, 0), (-1, 0), 1.25, LINE),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 3),
