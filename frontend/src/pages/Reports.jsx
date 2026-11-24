@@ -224,7 +224,7 @@ export default function Reports() {
               Clear dates
             </button>
           ) : null}
-          <Link className="btn btn-primary" to="/book">New report</Link>
+          <Link className="btn btn-primary" to="/book" state={{ fresh: Date.now() }}>New report</Link>
         </div>
         {error ? <div className="error-banner">{error}</div> : null}
         {editingId ? (

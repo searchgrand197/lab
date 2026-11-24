@@ -1,4 +1,4 @@
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 
 const links = [
@@ -15,6 +15,7 @@ const links = [
 export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const location = useLocation()
 
   return (
     <div className="app-shell">
@@ -28,6 +29,15 @@ export default function Layout() {
               to={link.to}
               title={link.label}
               className={({ isActive }) => (isActive ? 'active' : '')}
+              onClick={(event) => {
+                if (link.to !== '/book') return
+                event.preventDefault()
+                const onBook = location.pathname === '/book' || location.pathname === '/book/'
+                navigate('/book', {
+                  replace: onBook,
+                  state: { fresh: Date.now() },
+                })
+              }}
             >
               <span className="nav-short">{link.short}</span>
               <span className="nav-label">{link.label}</span>

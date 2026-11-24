@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { LabAPI } from '../api'
 import ReportModal from '../components/ReportModal'
 
@@ -85,12 +85,33 @@ export default function BookTest() {
   const [doctorOpen, setDoctorOpen] = useState(false)
   const [debouncedDoctorQuery, setDebouncedDoctorQuery] = useState('')
   const [params] = useSearchParams()
+  const location = useLocation()
   const navigate = useNavigate()
   const draftIdRef = useRef(null)
   const creatingRef = useRef(false)
   const restoredRef = useRef(false)
+  const bookingEpochRef = useRef(0)
   const latestRef = useRef({ form: blankForm(), tests: [] })
   latestRef.current = { form, tests: [...selectedTests] }
+
+  function startNewBooking() {
+    bookingEpochRef.current += 1
+    draftIdRef.current = null
+    creatingRef.current = false
+    localStorage.removeItem(AUTOSAVE_KEY)
+    setSelectedTests(new Set())
+    setSelectedPackages(new Set())
+    setQuery('')
+    setResults([])
+    setTestFilter('')
+    setDoctorQuery('')
+    setDoctorOpen(false)
+    setDebouncedDoctorQuery('')
+    setSaveState('')
+    setError('')
+    setBookingId(null)
+    setForm(blankForm())
+  }
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedDoctorQuery(doctorQuery), 180)
@@ -146,6 +167,11 @@ export default function BookTest() {
   }, [])
 
   useEffect(() => {
+    if (location.state?.fresh) {
+      startNewBooking()
+      restoredRef.current = true
+      return
+    }
     if (restoredRef.current || params.get('patient')) return
     restoredRef.current = true
     const now = nowLocal()
@@ -193,7 +219,7 @@ export default function BookTest() {
         sample_received_at: now,
       }))
     }
-  }, [params])
+  }, [params, location.state?.fresh])
 
   useEffect(() => {
     localStorage.setItem(
@@ -210,8 +236,9 @@ export default function BookTest() {
 
   useEffect(() => {
     if (!form.name.trim() || bookingId) return undefined
+    const epoch = bookingEpochRef.current
     const handle = setTimeout(async () => {
-      if (creatingRef.current) return
+      if (epoch !== bookingEpochRef.current || creatingRef.current) return
       setSaveState('Saving…')
       const body = {
         ...form,
@@ -227,9 +254,14 @@ export default function BookTest() {
         if (!draftIdRef.current) {
           creatingRef.current = true
           const booking = await LabAPI.createBooking(body)
+          if (epoch !== bookingEpochRef.current) {
+            creatingRef.current = false
+            return
+          }
           draftIdRef.current = booking.id
           creatingRef.current = false
           const latest = latestRef.current
+          if (epoch !== bookingEpochRef.current) return
           if (latest.form !== form || latest.tests.join() !== [...selectedTests].join()) {
             const follow = {
               ...latest.form,
@@ -243,6 +275,7 @@ export default function BookTest() {
         } else {
           await LabAPI.updateBooking(draftIdRef.current, { action: 'autosave', ...body })
         }
+        if (epoch !== bookingEpochRef.current) return
         setSaveState('Saved')
       } catch (err) {
         creatingRef.current = false
@@ -254,10 +287,18 @@ export default function BookTest() {
 
   useEffect(() => {
     const patientId = params.get('patient')
-    if (!patientId) return
+    if (!patientId) return undefined
+    let cancelled = false
+    const epoch = bookingEpochRef.current
     LabAPI.patient(patientId)
-      .then((p) => applyPatient(p))
+      .then((p) => {
+        if (cancelled || epoch !== bookingEpochRef.current) return
+        applyPatient(p)
+      })
       .catch(() => {})
+    return () => {
+      cancelled = true
+    }
   }, [params])
 
   useEffect(() => {
@@ -646,19 +687,7 @@ export default function BookTest() {
             setBookingId(null)
           }}
           onCommitted={() => {
-            draftIdRef.current = null
-            localStorage.removeItem(AUTOSAVE_KEY)
-            setSelectedTests(new Set())
-            setSelectedPackages(new Set())
-            setQuery('')
-            setResults([])
-            setTestFilter('')
-            setDoctorQuery('')
-            setDoctorOpen(false)
-            setSaveState('')
-            setError('')
-            setForm(blankForm())
-            setBookingId(null)
+            startNewBooking()
           }}
         />
       ) : null}
