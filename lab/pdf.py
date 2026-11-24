@@ -303,16 +303,6 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         textColor=INK,
         leading=12,
     )
-    param_method = ParagraphStyle(
-        'ParamMethod',
-        parent=styles['Normal'],
-        fontName='Times-Roman',
-        fontSize=7.5,
-        textColor=MUTED,
-        leading=9,
-        spaceBefore=0,
-        spaceAfter=0,
-    )
     result_normal = ParagraphStyle(
         'ResultNormal',
         parent=styles['Normal'],
@@ -513,30 +503,16 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             method = resolve_param_method(param)
             name_text = xml_escape(param.name.upper())
             if method:
-                # Nested table keeps method on its own line (font tags are unreliable in some viewers).
-                name_cell = Table(
-                    [
-                        [Paragraph(name_text, param_name)],
-                        [Paragraph(f'({xml_escape(method)})', param_method)],
-                    ],
-                    colWidths=[col_desc],
-                )
-                name_cell.setStyle(
-                    TableStyle(
-                        [
-                            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-                            ('TOPPADDING', (0, 0), (-1, -1), 0),
-                            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                        ]
-                    )
+                # Single Paragraph — nested Tables inside result rows explode wrap height.
+                name_para = Paragraph(
+                    f'{name_text}<br/><font size="7">({xml_escape(method)})</font>',
+                    param_name,
                 )
             else:
-                name_cell = Paragraph(name_text, param_name)
+                name_para = Paragraph(name_text, param_name)
             rows.append(
                 [
-                    name_cell,
+                    name_para,
                     result_para,
                     Paragraph((param.unit or '').upper(), unit_style),
                     Paragraph(param.reference_range or '', range_style),
@@ -580,28 +556,23 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             return [KeepTogether([title_block, body])]
 
         body_rows = _standard_param_rows(filled_results)
-        body_style = TableStyle(
-            [
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 3),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-                ('TOPPADDING', (0, 0), (-1, -1), 3.5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-                ('ALIGN', (1, 0), (2, -1), 'CENTER'),
-                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-            ]
+        body = Table(body_rows, colWidths=col_widths)
+        body.setStyle(
+            TableStyle(
+                [
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                    ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+                    ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+                    ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+                ]
+            )
         )
-        # Keep title with the first few result rows so it never sits alone on a
-        # page; remaining rows paginate normally onto the next page(s).
-        lead_n = min(4, len(body_rows))
-        lead = Table(body_rows[:lead_n], colWidths=col_widths)
-        lead.setStyle(body_style)
-        parts = [KeepTogether([title_block, lead])]
-        if len(body_rows) > lead_n:
-            rest = Table(body_rows[lead_n:], colWidths=col_widths)
-            rest.setStyle(body_style)
-            parts.append(rest)
-        return parts
+        # Do not KeepTogether the whole CBC — oversized KeepTogether forces blank
+        # pages. Title uses keepWithNext so it stays with the start of the table.
+        return [title_block, body]
 
     def _build_patient_header():
         """Full 3-column header (patient / barcode+dates / QR) — same on every page."""
@@ -714,16 +685,12 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         ]
     )
 
-    story = []
-    story.append(_col_header_table())
+    story = [_col_header_table()]
     for block in test_blocks:
         story.extend(block)
-    # Keep end marker with whatever came last (usually the last results table).
-    if story:
-        last = story[-1]
-        story[-1] = KeepTogether([last, end_marker])
-    else:
-        story.append(end_marker)
+    # Small end marker only — signature is drawn on the last page via canvas.
+    # Never KeepTogether this with a tall results table (that caused empty pages).
+    story.append(end_marker)
 
     bg_path = ''
     if draw_background and cfg.background_image:
