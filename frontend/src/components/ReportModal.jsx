@@ -351,15 +351,24 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
   // Snapshot after applying the manual edit — anything else that changes is autofill.
   const afterManual = { ...next }
   const locked = lockedIds || new Set()
-  const isLocked = (id) => (
-    String(id) === String(changedId)
-    || locked.has(id)
-    || locked.has(String(id))
-    || locked.has(Number(id))
-  )
-  // A value the user typed stays. Autofill only fills untouched fields.
-  const setCalc = (id, value) => {
-    if (isLocked(id)) return
+  const sameId = (a, b) => a != null && b != null && String(a) === String(b)
+  const userLocked = (id) => locked.has(id) || locked.has(String(id)) || locked.has(Number(id))
+  const unlock = (id) => {
+    locked.delete(id)
+    locked.delete(String(id))
+    locked.delete(Number(id))
+  }
+  // Keep a typed result until one of its source fields changes. Editing the
+  // calculated field itself never gets replaced on that same keystroke.
+  const setCalc = (id, value, sourceIds) => {
+    if (sameId(id, changedId)) return
+    const sourceTouched = (sourceIds || []).some((sid) => {
+      if (sid == null) return false
+      if (sameId(sid, changedId)) return true
+      return String(next[sid] ?? '') !== String(afterManual[sid] ?? '')
+    })
+    if (userLocked(id) && !sourceTouched) return
+    if (sourceTouched) unlock(id)
     next[id] = value
   }
 
@@ -371,14 +380,14 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
       if (r.id === changedId || !isHaemoglobinParam(r.name)) return
       const n = normalizeParamName(r.name)
       const otherIsGender = /\bfemale\b|\bmale\b/.test(n)
-      if (isGenderSpecific && !otherIsGender) setCalc(r.id, rawValue)
+      if (isGenderSpecific && !otherIsGender) setCalc(r.id, rawValue, [changedId])
     })
     const derived = calcCbcFromHb(parseNumber(rawValue))
     if (derived) {
       list.forEach((r) => {
         const key = cbcDerivedKey(r.name)
         if (!key || !derived[key]) return
-        setCalc(r.id, formatIndianNumber(derived[key]))
+        setCalc(r.id, formatIndianNumber(derived[key]), [changedId])
       })
     }
   }
@@ -400,7 +409,7 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
     ;['monocytes', 'eosinophils', 'basophils'].forEach((key) => {
       const row = byDlc[key]
       if (!row) return
-      setCalc(row.id, dlcRest[key])
+      setCalc(row.id, dlcRest[key], [byDlc.neutrophils?.id, byDlc.lymphocytes?.id])
     })
   }
 
@@ -420,7 +429,11 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
     list.forEach((r) => {
       const key = dlcAbsoluteKey(r.name)
       if (!key || pct[key] == null) return
-      setCalc(r.id, formatIndianNumber(String(Math.round((wbc * pct[key]) / 100))))
+      setCalc(
+        r.id,
+        formatIndianNumber(String(Math.round((wbc * pct[key]) / 100))),
+        [wbcRow?.id, byDlc[key]?.id],
+      )
     })
   }
 
@@ -442,11 +455,16 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
       const protein = proteinRaw ?? 0
       const albumin = albuminRaw ?? 0
       const globulin = Number((protein - albumin).toFixed(2))
-      setCalc(byProtein.globulin.id, formatIndianNumber(globulin.toFixed(2)))
+      const proteinSources = [byProtein.protein?.id, byProtein.albumin.id]
+      setCalc(byProtein.globulin.id, formatIndianNumber(globulin.toFixed(2)), proteinSources)
       if (byProtein.ag_ratio && globulin !== 0) {
-        setCalc(byProtein.ag_ratio.id, formatIndianNumber((albumin / globulin).toFixed(2)))
+        setCalc(
+          byProtein.ag_ratio.id,
+          formatIndianNumber((albumin / globulin).toFixed(2)),
+          [...proteinSources, byProtein.globulin.id],
+        )
       } else if (byProtein.ag_ratio && globulin === 0) {
-        setCalc(byProtein.ag_ratio.id, '')
+        setCalc(byProtein.ag_ratio.id, '', [...proteinSources, byProtein.globulin.id])
       }
     }
   }
@@ -466,7 +484,11 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
     )
     if (total != null && conjugated != null) {
       const unconjugated = Number((total - conjugated).toFixed(2))
-      setCalc(byBili.unconjugated.id, formatIndianNumber(unconjugated.toFixed(2)))
+      setCalc(
+        byBili.unconjugated.id,
+        formatIndianNumber(unconjugated.toFixed(2)),
+        [byBili.total.id, byBili.conjugated.id],
+      )
     }
   }
 
@@ -484,7 +506,11 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
       byLiver.sgpt.id === changedId ? rawValue : next[byLiver.sgpt.id],
     )
     if (sgot != null && sgpt != null && sgpt !== 0) {
-      setCalc(byLiver.ratio.id, formatIndianNumber((sgot / sgpt).toFixed(2)))
+      setCalc(
+        byLiver.ratio.id,
+        formatIndianNumber((sgot / sgpt).toFixed(2)),
+        [byLiver.sgot.id, byLiver.sgpt.id],
+      )
     }
   }
 
@@ -503,20 +529,33 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
   let bun = readRenal('bun')
   const crea = readRenal('creatinine')
 
-  // BUN from Urea (always refresh when urea is set)
-  if (byRenal.urea && byRenal.bun && urea != null && !isLocked(byRenal.bun.id)) {
-    bun = Number(((urea * 28) / 60).toFixed(2))
-    next[byRenal.bun.id] = formatIndianNumber(bun.toFixed(2))
+  // BUN from Urea. A typed BUN stays until urea itself changes.
+  if (byRenal.urea && byRenal.bun && urea != null) {
+    const computedBun = Number(((urea * 28) / 60).toFixed(2))
+    setCalc(
+      byRenal.bun.id,
+      formatIndianNumber(computedBun.toFixed(2)),
+      [byRenal.urea.id],
+    )
+    bun = parseNumber(next[byRenal.bun.id])
   }
 
   // BLOOD UREA NITROGEN / CREATININE RATIO = BUN ÷ Creatinine
   if (byRenal.bun_crea_ratio && bun != null && crea != null && crea !== 0) {
-    setCalc(byRenal.bun_crea_ratio.id, formatIndianNumber((bun / crea).toFixed(2)))
+    setCalc(
+      byRenal.bun_crea_ratio.id,
+      formatIndianNumber((bun / crea).toFixed(2)),
+      [byRenal.urea?.id, byRenal.bun.id, byRenal.creatinine?.id],
+    )
   }
 
   // Short "Bun / Creatinine" = Urea ÷ Creatinine (reference software behaviour)
   if (byRenal.urea_crea_ratio && urea != null && crea != null && crea !== 0) {
-    setCalc(byRenal.urea_crea_ratio.id, formatIndianNumber((urea / crea).toFixed(2)))
+    setCalc(
+      byRenal.urea_crea_ratio.id,
+      formatIndianNumber((urea / crea).toFixed(2)),
+      [byRenal.urea.id, byRenal.creatinine?.id],
+    )
   }
 
   // --- HbA1c → Estimated Average Glucose ---
@@ -532,7 +571,7 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
     if (a1c != null) {
       // ADA formula: eAG (mg/dL) = 28.7 × A1c − 46.7
       const eag = Number((28.7 * a1c - 46.7).toFixed(2))
-      setCalc(byA1c.eag.id, formatIndianNumber(eag.toFixed(2)))
+      setCalc(byA1c.eag.id, formatIndianNumber(eag.toFixed(2)), [byA1c.a1c.id])
     }
   }
 
@@ -559,12 +598,13 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
       const isi = isiRaw != null && isiRaw > 0 ? isiRaw : 1
       const inr = Number((test / control) ** isi).toFixed(2)
 
-      if (byPt.index) setCalc(byPt.index.id, formatIndianNumber(index.toFixed(2)))
-      if (byPt.pti) setCalc(byPt.pti.id, formatIndianNumber(pti.toFixed(2)))
+      const ptSources = [byPt.control.id, byPt.test.id, byPt.isi?.id]
+      if (byPt.index) setCalc(byPt.index.id, formatIndianNumber(index.toFixed(2)), ptSources)
+      if (byPt.pti) setCalc(byPt.pti.id, formatIndianNumber(pti.toFixed(2)), ptSources)
       if (byPt.patient_ratio) {
-        setCalc(byPt.patient_ratio.id, formatIndianNumber(patientRatio.toFixed(2)))
+        setCalc(byPt.patient_ratio.id, formatIndianNumber(patientRatio.toFixed(2)), ptSources)
       }
-      if (byPt.inr) setCalc(byPt.inr.id, formatIndianNumber(String(inr)))
+      if (byPt.inr) setCalc(byPt.inr.id, formatIndianNumber(String(inr)), ptSources)
     }
   }
 
@@ -596,21 +636,34 @@ function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
       const nonHdl = Number((tc - hdl).toFixed(2))
       const totalLipids = Number((2 * tc + tg).toFixed(2))
 
-      if (byLipid.vldl) setCalc(byLipid.vldl.id, formatIndianNumber(vldl.toFixed(2)))
-      if (byLipid.ldl) setCalc(byLipid.ldl.id, formatIndianNumber(ldl.toFixed(2)))
-      if (byLipid.non_hdl) setCalc(byLipid.non_hdl.id, formatIndianNumber(nonHdl.toFixed(2)))
+      const tcHdlTg = [byLipid.tc?.id, byLipid.hdl?.id, byLipid.tg?.id]
+      if (byLipid.vldl) {
+        setCalc(byLipid.vldl.id, formatIndianNumber(vldl.toFixed(2)), [byLipid.tg?.id])
+      }
+      if (byLipid.ldl) setCalc(byLipid.ldl.id, formatIndianNumber(ldl.toFixed(2)), tcHdlTg)
+      if (byLipid.non_hdl) {
+        setCalc(byLipid.non_hdl.id, formatIndianNumber(nonHdl.toFixed(2)), [byLipid.tc?.id, byLipid.hdl?.id])
+      }
       if (byLipid.total_lipids) {
-        setCalc(byLipid.total_lipids.id, formatIndianNumber(totalLipids.toFixed(2)))
+        setCalc(
+          byLipid.total_lipids.id,
+          formatIndianNumber(totalLipids.toFixed(2)),
+          [byLipid.tc?.id, byLipid.tg?.id],
+        )
       }
       if (byLipid.tc_hdl_ratio) {
-        setCalc(byLipid.tc_hdl_ratio.id, hdl
-          ? formatIndianNumber((tc / hdl).toFixed(2))
-          : '')
+        setCalc(
+          byLipid.tc_hdl_ratio.id,
+          hdl ? formatIndianNumber((tc / hdl).toFixed(2)) : '',
+          [byLipid.tc?.id, byLipid.hdl?.id],
+        )
       }
       if (byLipid.ldl_hdl_ratio) {
-        setCalc(byLipid.ldl_hdl_ratio.id, hdl
-          ? formatIndianNumber((ldl / hdl).toFixed(2))
-          : '')
+        setCalc(
+          byLipid.ldl_hdl_ratio.id,
+          hdl ? formatIndianNumber((ldl / hdl).toFixed(2)) : '',
+          tcHdlTg,
+        )
       }
     }
   }
