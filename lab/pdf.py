@@ -49,8 +49,8 @@ class ActualSizeCanvas(pdfcanvas.Canvas):
         total = len(self._saved_page_states)
         for state in self._saved_page_states:
             self.__dict__.update(state)
-            if self._pageNumber == total and callable(self._on_last_page):
-                self._on_last_page(self)
+            if callable(self._on_last_page):
+                self._on_last_page(self, self._pageNumber, total)
             pdfcanvas.Canvas.showPage(self)
         pdfcanvas.Canvas.save(self)
 
@@ -689,21 +689,11 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         if block is not None:
             test_blocks.append(block)
 
-    # Compact end marker — signature is stamped on the last page via canvas so
-    # a tall KeepTogether cannot open a nearly blank trailing page by itself.
-    end_marker = KeepTogether(
-        [
-            Paragraph('**** END OF REPORT ****', end_style),
-            HRFlowable(width='100%', thickness=1, color=LINE, spaceBefore=2, spaceAfter=2),
-        ]
-    )
-
+    # Closing lines are stamped in the footer after we know the page count,
+    # so they never push results onto an extra page.
     story = [_col_header_table()]
     for block in test_blocks:
         story.extend(block)
-    # Small end marker only — signature is drawn on the last page via canvas.
-    # Never KeepTogether this with a tall results table (that caused empty pages).
-    story.append(end_marker)
 
     bg_path = ''
     if draw_background and cfg.background_image:
@@ -763,20 +753,37 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             header.drawOn(canvas, layout['left'], y_cursor - hh)
         canvas.restoreState()
 
-    def _draw_last_page_signature(canv):
-        """Authorized signatory only on the last page (footer band)."""
+    def _stamp_closing(canv, page_number, total):
+        """One page: END OF REPORT in the footer only.
+        Extra pages: END OF REPORT and signature on the last page footer.
+        """
+        if total <= 1:
+            if page_number != 1:
+                return
+        elif page_number != total:
+            return
         plate_right = plate_w - layout['right_in_plate']
-        y = plate_y + max(10 * mm, layout['footer_h'] * 0.55)
+        mid_x = (layout['left'] + plate_right) / 2
+        # Sit inside the footer band, above the page-number line.
+        y = plate_y + min(max(layout['footer_h'] * 0.62, 8 * mm), 14 * mm)
         canv.saveState()
         canv.setFillColor(INK)
-        canv.setFont('Times-Roman', 9)
-        canv.drawRightString(plate_right, y + 11, '____________________________')
-        canv.drawRightString(plate_right, y, 'Authorized Signatory')
+        canv.setFont('Times-Bold', 9)
+        if total > 1:
+            # Shift the end line left so it clears the signatory on the right.
+            canv.drawCentredString(mid_x - 16 * mm, y + 4, '**** END OF REPORT ****')
+            canv.setStrokeColor(INK)
+            canv.setLineWidth(0.6)
+            canv.line(plate_right - 38 * mm, y + 12, plate_right, y + 12)
+            canv.setFont('Times-Roman', 8)
+            canv.drawRightString(plate_right, y, 'Authorized Signatory')
+        else:
+            canv.drawCentredString(mid_x, y, '**** END OF REPORT ****')
         canv.restoreState()
 
     def _canvas_maker(*args, **kwargs):
         c = ActualSizeCanvas(*args, **kwargs)
-        c._on_last_page = _draw_last_page_signature
+        c._on_last_page = _stamp_closing
         return c
 
     doc.build(
