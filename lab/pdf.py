@@ -675,6 +675,9 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     if cfg.show_lab_title:
         # Lab title sits above the patient card on every page.
         repeating_header_h += 28
+    # Column titles (Test Description / Result / Unit / Range) repeat on every page.
+    _, col_header_h = _col_header_table().wrap(content_w, page_h)
+    repeating_header_h += col_header_h + 3
     doc.topMargin = layout['top'] + repeating_header_h
 
     booking_tests = list(
@@ -691,7 +694,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
 
     # Closing lines are stamped in the footer after we know the page count,
     # so they never push results onto an extra page.
-    story = [_col_header_table()]
+    story = []
     for block in test_blocks:
         story.extend(block)
 
@@ -751,6 +754,10 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         if header is not None:
             _, hh = header.wrap(content_w, page_h)
             header.drawOn(canvas, layout['left'], y_cursor - hh)
+        # Column header sits at the top of the content frame on every page.
+        col_band = _col_header_table()
+        _, bh = col_band.wrap(content_w, page_h)
+        col_band.drawOn(canvas, layout['left'], page_h - doc.topMargin)
         canvas.restoreState()
 
     def _stamp_closing(canv, page_number, total):
