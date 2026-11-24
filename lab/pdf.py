@@ -580,21 +580,28 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             return [KeepTogether([title_block, body])]
 
         body_rows = _standard_param_rows(filled_results)
-        body = Table(body_rows, colWidths=col_widths)
-        body.setStyle(
-            TableStyle(
-                [
-                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                    ('LEFTPADDING', (0, 0), (-1, -1), 3),
-                    ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-                    ('TOPPADDING', (0, 0), (-1, -1), 3.5),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-                    ('ALIGN', (1, 0), (2, -1), 'CENTER'),
-                    ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
-                ]
-            )
+        body_style = TableStyle(
+            [
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
+                ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+                ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
+            ]
         )
-        return [title_block, body]
+        # Keep title with the first few result rows so it never sits alone on a
+        # page; remaining rows paginate normally onto the next page(s).
+        lead_n = min(4, len(body_rows))
+        lead = Table(body_rows[:lead_n], colWidths=col_widths)
+        lead.setStyle(body_style)
+        parts = [KeepTogether([title_block, lead])]
+        if len(body_rows) > lead_n:
+            rest = Table(body_rows[lead_n:], colWidths=col_widths)
+            rest.setStyle(body_style)
+            parts.append(rest)
+        return parts
 
     def _build_patient_header():
         """Full 3-column header (patient / barcode+dates / QR) — same on every page."""
