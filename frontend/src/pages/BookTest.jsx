@@ -648,8 +648,14 @@ export default function BookTest() {
             setSelectedTests(new Set())
             setSelectedPackages(new Set())
             setQuery('')
+            setResults([])
+            setTestFilter('')
+            setDoctorQuery('')
+            setDoctorFocused(false)
             setSaveState('')
+            setError('')
             setForm(blankForm())
+            setBookingId(null)
           }}
         />
       ) : null}
