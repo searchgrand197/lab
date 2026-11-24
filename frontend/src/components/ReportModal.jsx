@@ -661,6 +661,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
   const [values, setValues] = useState({})
   const [autofilledIds, setAutofilledIds] = useState(() => new Set())
   const [status, setStatus] = useState('booked')
+  const [dragIndex, setDragIndex] = useState(null)
 
   function applyResultChange(results, changedId, rawValue) {
     setValues((prev) => {
@@ -810,6 +811,27 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
 
   const selectedIds = useMemo(() => new Set(booking?.selected_test_ids || []), [booking])
   const selectedTests = booking?.tests || []
+
+  async function reorderTests(fromIndex, toIndex) {
+    if (fromIndex == null || toIndex == null || fromIndex === toIndex) return
+    const next = [...selectedTests]
+    const [moved] = next.splice(fromIndex, 1)
+    next.splice(toIndex, 0, moved)
+    setBooking((current) => (
+      current
+        ? { ...current, tests: next, selected_test_ids: next.map((entry) => entry.test.id) }
+        : current
+    ))
+    try {
+      const detail = await LabAPI.updateBooking(bookingId, {
+        action: 'reorder_tests',
+        ordered_ids: next.map((entry) => entry.test.id),
+      })
+      if (!dirtyRef.current) setBooking(detail)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
 
   function scrollToPanel(testId) {
     const node = panelRefs.current[testId]
@@ -1015,7 +1037,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                 <h3 className="panel-title result-section-heading" style={{ margin: 0 }}>Selected tests</h3>
                 <p className="result-toolbar-meta">
                   {selectedTests.length
-                    ? `${selectedTests.length} test${selectedTests.length === 1 ? '' : 's'} · fill every parameter below`
+                    ? `${selectedTests.length} test${selectedTests.length === 1 ? '' : 's'} · drag to reorder · CBC stays first until you move it`
                     : 'No tests on this report yet'}
                   {saveHint ? <span className="autosave-state"> · {saveHint}</span> : null}
                 </p>
@@ -1050,7 +1072,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
               </div>
             ) : (
               <div className="result-accordion-list">
-                {selectedTests.map((entry) => {
+                {selectedTests.map((entry, index) => {
                   const testId = entry.test.id
                   const isOpen = openPanels.has(testId)
                   const filled = (entry.results || []).filter((r) => (values[r.id] || '').trim()).length
@@ -1058,9 +1080,19 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                   return (
                     <div
                       key={entry.booking_test_id || testId}
-                      className={`result-accordion ${isOpen ? 'open' : ''}`}
+                      className={`result-accordion ${isOpen ? 'open' : ''} ${dragIndex === index ? 'dragging' : ''}`}
                       ref={(node) => {
                         panelRefs.current[testId] = node
+                      }}
+                      onDragOver={(e) => {
+                        e.preventDefault()
+                        e.dataTransfer.dropEffect = 'move'
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault()
+                        const from = Number(e.dataTransfer.getData('text/plain'))
+                        reorderTests(Number.isFinite(from) ? from : dragIndex, index)
+                        setDragIndex(null)
                       }}
                     >
                       <button
@@ -1069,6 +1101,22 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                         onClick={() => togglePanel(testId)}
                         aria-expanded={isOpen}
                       >
+                        <span
+                          className="result-drag-handle"
+                          draggable
+                          title="Drag to reorder"
+                          aria-label={`Reorder ${entry.test.name}`}
+                          onClick={(e) => e.stopPropagation()}
+                          onDragStart={(e) => {
+                            e.stopPropagation()
+                            e.dataTransfer.effectAllowed = 'move'
+                            e.dataTransfer.setData('text/plain', String(index))
+                            setDragIndex(index)
+                          }}
+                          onDragEnd={() => setDragIndex(null)}
+                        >
+                          ⋮⋮
+                        </span>
                         <span className="result-accordion-chevron" aria-hidden="true">
                           {isOpen ? '▾' : '▸'}
                         </span>

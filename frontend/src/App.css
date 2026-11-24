@@ -656,6 +656,9 @@ table.data .sub { display: block; color: var(--slate-500); font-size: 0.74rem; f
   border-color: rgba(22, 101, 52, 0.4);
   box-shadow: 0 12px 28px rgba(5, 46, 22, 0.1);
 }
+.result-accordion.dragging {
+  opacity: 0.55;
+}
 .result-accordion-head {
   width: 100%;
   display: flex;
@@ -668,6 +671,18 @@ table.data .sub { display: block; color: var(--slate-500); font-size: 0.74rem; f
   background: linear-gradient(90deg, #dcfce7 0%, #f0fdf4 42%, #ffffff 100%);
   cursor: pointer;
   color: var(--slate-800);
+}
+.result-drag-handle {
+  flex-shrink: 0;
+  cursor: grab;
+  color: #14532d;
+  font-weight: 800;
+  letter-spacing: -0.12em;
+  padding: 0.15rem 0.2rem;
+  user-select: none;
+}
+.result-drag-handle:active {
+  cursor: grabbing;
 }
 .result-accordion.open .result-accordion-head {
   border-left-color: #14532d;

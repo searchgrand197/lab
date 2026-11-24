@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, time
 from functools import wraps
 
@@ -282,11 +283,31 @@ def _booking_dict(b, detail=False):
     return data
 
 
+def _is_cbc_test(test):
+    name = (getattr(test, 'name', '') or '').lower()
+    return 'complete blood' in name or bool(re.search(r'\bcbc\b', name))
+
+
+def _apply_default_booking_test_order(booking):
+    """CBC first until the user drags a custom order."""
+    if getattr(booking, 'test_order_custom', False):
+        return
+    rows = list(booking.booking_tests.select_related('test'))
+    rows.sort(key=lambda bt: (0 if _is_cbc_test(bt.test) else 1, bt.id))
+    for index, bt in enumerate(rows):
+        if bt.sort_order != index:
+            BookingTest.objects.filter(pk=bt.pk).update(sort_order=index)
+
+
 def _ensure_booking_test(booking, test):
+    next_order = 0
+    if getattr(booking, 'test_order_custom', False):
+        last = booking.booking_tests.order_by('-sort_order').values_list('sort_order', flat=True).first()
+        next_order = (last if last is not None else -1) + 1
     bt, created = BookingTest.objects.get_or_create(
         booking=booking,
         test=test,
-        defaults={'price': test.price},
+        defaults={'price': test.price, 'sort_order': next_order},
     )
     # Always sync missing parameters (e.g. Widal matrix cells added later).
     for param in test.parameters.all():
@@ -803,6 +824,7 @@ def bookings_api(request):
         tests = Test.objects.filter(id__in=test_ids, is_active=True)
         for test in tests:
             _ensure_booking_test(booking, test)
+        _apply_default_booking_test_order(booking)
 
     return JsonResponse(_booking_dict(booking, detail=True), status=201)
 
@@ -836,6 +858,7 @@ def booking_detail_api(request, pk):
             # Sync any new parameters (e.g. Widal matrix cells) onto existing booking tests.
             for bt in booking.booking_tests.select_related('test'):
                 _ensure_booking_test(booking, bt.test)
+            _apply_default_booking_test_order(booking)
         return JsonResponse(_booking_dict(booking, detail=True))
 
     data = _body(request)
@@ -913,12 +936,27 @@ def booking_detail_api(request, pk):
             bt.delete()
         for test in Test.objects.filter(id__in=desired - current, is_active=True):
             _ensure_booking_test(booking, test)
+        _apply_default_booking_test_order(booking)
+        return JsonResponse(_booking_dict(booking, detail=True))
+
+    if action == 'reorder_tests':
+        ordered_ids = []
+        for raw in data.get('ordered_ids') or []:
+            try:
+                ordered_ids.append(int(raw))
+            except (TypeError, ValueError):
+                continue
+        for index, test_id in enumerate(ordered_ids):
+            booking.booking_tests.filter(test_id=test_id).update(sort_order=index)
+        booking.test_order_custom = True
+        booking.save(update_fields=['test_order_custom', 'updated_at'])
         return JsonResponse(_booking_dict(booking, detail=True))
 
     if action == 'remove_test' and test_id:
         bt = booking.booking_tests.filter(test_id=test_id).first()
         if bt:
             bt.delete()
+        _apply_default_booking_test_order(booking)
         return JsonResponse(_booking_dict(booking, detail=True))
 
     if action == 'save_results' and test_id:

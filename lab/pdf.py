@@ -684,7 +684,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         booking.booking_tests.select_related('test__category').prefetch_related(
             'results__parameter',
             'test__parameters',
-        )
+        ).order_by('sort_order', 'id')
     )
     test_blocks = []
     for bt in booking_tests:

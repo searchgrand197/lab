@@ -194,6 +194,8 @@ class Booking(models.Model):
     sample_delivered_to = models.CharField(max_length=100, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='booked')
     remarks = models.TextField(blank=True)
+    # False until the user drags tests; while false, CBC stays first.
+    test_order_custom = models.BooleanField(default=False)
     # Soft-delete: hidden from the app UI, retained for admin audit.
     is_deleted = models.BooleanField(default=False, db_index=True)
     deletion_reason = models.TextField(blank=True)
@@ -234,9 +236,11 @@ class BookingTest(models.Model):
     booking = models.ForeignKey(Booking, on_delete=models.CASCADE, related_name='booking_tests')
     test = models.ForeignKey(Test, on_delete=models.PROTECT, related_name='booking_tests')
     price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    sort_order = models.PositiveIntegerField(default=0, db_index=True)
 
     class Meta:
         unique_together = [('booking', 'test')]
+        ordering = ['sort_order', 'id']
 
     def __str__(self):
         return f'{self.booking.report_no}: {self.test.name}'
