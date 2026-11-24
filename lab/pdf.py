@@ -545,7 +545,9 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         return rows
 
     def _test_block(bt):
-        """One test title + its results, kept together so the title never orphans alone."""
+        """Return flowables for one test. Title keeps with the start of its body;
+        large result tables may paginate so we never force a blank trailing page.
+        """
         all_results = list(bt.results.all())
         filled_results = [r for r in all_results if (r.value or '').strip()]
         if not filled_results:
@@ -571,10 +573,11 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 ),
             ]
         )
+        title_block.keepWithNext = True
 
         if is_widal_test(bt.test):
             body = _widal_flowable(all_results)
-            return KeepTogether([title_block, body])
+            return [KeepTogether([title_block, body])]
 
         body_rows = _standard_param_rows(filled_results)
         body = Table(body_rows, colWidths=col_widths)
@@ -591,7 +594,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 ]
             )
         )
-        return KeepTogether([title_block, body])
+        return [title_block, body]
 
     def _build_patient_header():
         """Full 3-column header (patient / barcode+dates / QR) — same on every page."""
@@ -695,8 +698,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         if block is not None:
             test_blocks.append(block)
 
-    # Compact end marker kept with last results. Signature is stamped on the
-    # last page via canvas so it cannot force an empty trailing page by itself.
+    # Compact end marker — signature is stamped on the last page via canvas so
+    # a tall KeepTogether cannot open a nearly blank trailing page by itself.
     end_marker = KeepTogether(
         [
             Paragraph('**** END OF REPORT ****', end_style),
@@ -705,14 +708,15 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     )
 
     story = []
-    if not test_blocks:
-        story.append(end_marker)
-    elif len(test_blocks) == 1:
-        story.append(KeepTogether([_col_header_table(), test_blocks[0], end_marker]))
+    story.append(_col_header_table())
+    for block in test_blocks:
+        story.extend(block)
+    # Keep end marker with whatever came last (usually the last results table).
+    if story:
+        last = story[-1]
+        story[-1] = KeepTogether([last, end_marker])
     else:
-        story.append(KeepTogether([_col_header_table(), test_blocks[0]]))
-        story.extend(test_blocks[1:-1])
-        story.append(KeepTogether([test_blocks[-1], end_marker]))
+        story.append(end_marker)
 
     bg_path = ''
     if draw_background and cfg.background_image:
