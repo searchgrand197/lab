@@ -176,6 +176,7 @@ def _doctor_dict(d):
     return {
         'id': d.id,
         'name': d.name,
+        'display_name': d.display_name,
         'specialization': d.specialization,
         'phone': d.phone,
         'is_active': d.is_active,

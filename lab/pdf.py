@@ -319,7 +319,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     )
 
     patient = booking.patient
-    doctor_name = f'Dr. {booking.doctor.name}' if booking.doctor else '—'
+    doctor_name = booking.doctor.display_name if booking.doctor else '—'
     gender = patient.get_gender_display()
     age_gender = f'{patient.age if patient.age is not None else ""}/{gender}'
     now = timezone.localtime()

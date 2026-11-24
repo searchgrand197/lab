@@ -4,6 +4,18 @@ from django.db import models
 from django.utils import timezone
 
 
+def _name_has_prefix(name, prefixes):
+    """True if name already starts with any of the given titles (Dr / Dr. / etc.)."""
+    lower = ' '.join((name or '').strip().lower().split())
+    for prefix in prefixes:
+        p = ' '.join((prefix or '').strip().lower().split()).rstrip('.')
+        if not p:
+            continue
+        if lower == p or lower.startswith(f'{p}.') or lower.startswith(f'{p} '):
+            return True
+    return False
+
+
 class Doctor(models.Model):
     name = models.CharField(max_length=120)
     specialization = models.CharField(max_length=120, blank=True)
@@ -21,6 +33,16 @@ class Doctor(models.Model):
 
     def __str__(self):
         return self.name
+
+    @property
+    def display_name(self):
+        """Referred-by label: ensure a single Dr. prefix, never Dr. Dr."""
+        name = (self.name or '').strip()
+        if not name:
+            return ''
+        if _name_has_prefix(name, ('Dr.', 'Dr', 'Doctor')):
+            return name
+        return f'Dr. {name}'
 
     def save(self, *args, **kwargs):
         super().save(*args, **kwargs)
@@ -66,7 +88,12 @@ class Patient(models.Model):
     def display_name(self):
         title = (self.title or '').strip()
         name = (self.name or '').strip()
-        return f'{title} {name}'.strip() if title else name
+        if not title:
+            return name
+        # Avoid "Dr. Dr. ..." when the typed name already includes the title.
+        if _name_has_prefix(name, (title, title.rstrip('.'))):
+            return name
+        return f'{title} {name}'.strip()
 
     def __str__(self):
         return f'{self.display_name} ({self.mobile or "no mobile"})'
