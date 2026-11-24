@@ -324,7 +324,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     result_out = ParagraphStyle(
         'ResultOut',
         parent=styles['Normal'],
-        fontName='Times-Roman',
+        fontName='Times-Bold',
         fontSize=9.5,
         textColor=INK,
         alignment=0,  # left
@@ -506,7 +506,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             state = evaluate_result_range(value, param.reference_range)
             # No H/L markers; keep out-of-range readable without heavy bold.
             if state in ('high', 'low'):
-                result_para = Paragraph(display_value, result_out)
+                # Out-of-range (odd) values print bold; no H/L suffix.
+                result_para = Paragraph(f'<b>{display_value}</b>', result_out)
             elif state == 'in':
                 result_para = Paragraph(display_value, result_in)
             else:
