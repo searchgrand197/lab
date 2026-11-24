@@ -82,7 +82,7 @@ export default function BookTest() {
   const [busy, setBusy] = useState(false)
   const [bookingId, setBookingId] = useState(null)
   const [doctorQuery, setDoctorQuery] = useState('')
-  const [doctorFocused, setDoctorFocused] = useState(false)
+  const [doctorOpen, setDoctorOpen] = useState(false)
   const [debouncedDoctorQuery, setDebouncedDoctorQuery] = useState('')
   const [params] = useSearchParams()
   const navigate = useNavigate()
@@ -98,13 +98,18 @@ export default function BookTest() {
   }, [doctorQuery])
 
   const selectedDoctor = doctors.find((d) => String(d.id) === String(form.doctor_id))
+  useEffect(() => {
+    if (doctorOpen) return
+    setDoctorQuery(selectedDoctor?.name || '')
+  }, [form.doctor_id, selectedDoctor?.name, doctorOpen])
   const doctorMatches = useMemo(() => {
     const q = debouncedDoctorQuery.trim()
-    if (!doctorFocused || !q) return []
+    if (!doctorOpen || !q) return []
+    if (selectedDoctor && doctorMatchKey(q) === doctorMatchKey(selectedDoctor.name)) return []
     return doctors
       .filter((d) => d.is_active !== false && doctorMatchesQuery(d, q))
       .slice(0, 12)
-  }, [doctors, debouncedDoctorQuery, doctorFocused])
+  }, [doctors, debouncedDoctorQuery, doctorOpen, selectedDoctor])
 
   useEffect(() => {
     let cancelled = false
@@ -503,19 +508,17 @@ export default function BookTest() {
                     <input
                       className="field-input"
                       placeholder="Type doctor name…"
-                      value={doctorFocused ? doctorQuery : (selectedDoctor?.name || '')}
-                      onFocus={() => {
-                        setDoctorFocused(true)
-                        setDoctorQuery(selectedDoctor?.name || doctorQuery)
-                      }}
-                      onBlur={() => setDoctorFocused(false)}
+                      value={doctorQuery}
+                      onFocus={() => setDoctorOpen(true)}
+                      onBlur={() => setDoctorOpen(false)}
                       onChange={(e) => {
                         setDoctorQuery(e.target.value)
+                        setDoctorOpen(true)
                         if (form.doctor_id) setField('doctor_id', '')
                       }}
                       autoComplete="off"
                     />
-                    {doctorFocused && debouncedDoctorQuery.trim() ? (
+                    {doctorOpen && debouncedDoctorQuery.trim() && (!selectedDoctor || doctorMatchKey(debouncedDoctorQuery) !== doctorMatchKey(selectedDoctor.name)) ? (
                       <div className="search-results">
                         {doctorMatches.length ? doctorMatches.map((d) => (
                           <button
@@ -525,7 +528,7 @@ export default function BookTest() {
                               e.preventDefault()
                               setField('doctor_id', String(d.id))
                               setDoctorQuery(d.name)
-                              setDoctorFocused(false)
+                              setDoctorOpen(false)
                             }}
                           >
                             <strong>{d.name}</strong>
@@ -651,7 +654,7 @@ export default function BookTest() {
             setResults([])
             setTestFilter('')
             setDoctorQuery('')
-            setDoctorFocused(false)
+            setDoctorOpen(false)
             setSaveState('')
             setError('')
             setForm(blankForm())
