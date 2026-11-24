@@ -6,6 +6,12 @@ import GreenLoader from '../components/GreenLoader'
 import Pagination from '../components/Pagination'
 import ReportModal from '../components/ReportModal'
 
+function todayInput() {
+  const d = new Date()
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+}
+
 const TITLES = ['Mr.', 'Mrs.', 'Ms.', 'Miss', 'Master', 'Dr.', 'Baby', 'B/O', 'Smt.', 'Shri', '']
 const PAGE_SIZE = 50
 const DELETE_REASONS = [
@@ -34,8 +40,8 @@ const blank = {
 
 export default function Reports() {
   const [q, setQ] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [dateFrom, setDateFrom] = useState(todayInput)
+  const [dateTo, setDateTo] = useState(todayInput)
   const [bookings, setBookings] = useState([])
   const [page, setPage] = useState(1)
   const [count, setCount] = useState(0)
