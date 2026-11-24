@@ -309,7 +309,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontName='Times-Roman',
         fontSize=9.5,
         textColor=INK,
-        alignment=1,
+        alignment=0,  # left
         leading=12,
     )
     result_in = ParagraphStyle(
@@ -318,7 +318,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontName='Times-Roman',
         fontSize=9.5,
         textColor=INK,
-        alignment=1,
+        alignment=0,  # left
         leading=12,
     )
     result_out = ParagraphStyle(
@@ -327,7 +327,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontName='Times-Roman',
         fontSize=9.5,
         textColor=INK,
-        alignment=1,
+        alignment=0,  # left
         leading=12,
     )
     unit_style = ParagraphStyle(
@@ -336,8 +336,18 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontName='Times-Roman',
         fontSize=8.5,
         textColor=INK,
-        alignment=1,
+        alignment=2,  # right
         leading=11,
+    )
+    result_head = ParagraphStyle(
+        'ResultHead',
+        parent=col_head,
+        alignment=0,
+    )
+    unit_head = ParagraphStyle(
+        'UnitHead',
+        parent=col_head,
+        alignment=2,
     )
     range_style = ParagraphStyle(
         'Range',
@@ -400,8 +410,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             [
                 [
                     Paragraph('Test Description', col_head),
-                    Paragraph('Result', col_head),
-                    Paragraph('Unit', col_head),
+                    Paragraph('Result', result_head),
+                    Paragraph('Unit', unit_head),
                     Paragraph('Reference Range', range_head),
                 ]
             ],
@@ -417,7 +427,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                     ('RIGHTPADDING', (0, 0), (-1, -1), 3),
                     ('TOPPADDING', (0, 0), (-1, -1), 4),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-                    ('ALIGN', (1, 0), (2, 0), 'CENTER'),
+                    ('ALIGN', (1, 0), (1, 0), 'LEFT'),
+                    ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
                     ('ALIGN', (3, 0), (3, 0), 'RIGHT'),
                 ]
             )
@@ -565,7 +576,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                     ('RIGHTPADDING', (0, 0), (-1, -1), 3),
                     ('TOPPADDING', (0, 0), (-1, -1), 3.5),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
-                    ('ALIGN', (1, 0), (2, -1), 'CENTER'),
+                    ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+                    ('ALIGN', (2, 0), (2, -1), 'RIGHT'),
                     ('ALIGN', (3, 0), (3, -1), 'RIGHT'),
                 ]
             )
