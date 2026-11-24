@@ -651,6 +651,20 @@ function evaluateResultRange(value, referenceRange) {
     return (inclusive ? num >= limit : num > limit) ? 'in' : 'low'
   }
 
+  // Deficiency / insufficiency only (Vitamin D): good is above the highest bad limit.
+  if (/deficiency|insufficiency/i.test(range) && !/(?:normal|desirable|optimal|sufficient)\s*:/i.test(range)) {
+    let ceiling = null
+    for (const match of range.matchAll(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/gi)) {
+      const high = parseNumber(match[2])
+      if (high != null) ceiling = ceiling == null ? high : Math.max(ceiling, high)
+    }
+    for (const match of range.matchAll(/below\s*(-?\d+(?:\.\d+)?)/gi)) {
+      const high = parseNumber(match[1])
+      if (high != null) ceiling = ceiling == null ? high : Math.max(ceiling, high)
+    }
+    if (ceiling != null) return num > ceiling ? 'in' : 'low'
+  }
+
   const between = range.match(/(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)/i)
   if (between) {
     const low = parseNumber(between[1])

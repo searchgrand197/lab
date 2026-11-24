@@ -858,6 +858,27 @@ def evaluate_result_range(value, reference_range):
         inclusive = good_greater.group(1) in ('≥', '>=')
         return 'in' if (num >= limit if inclusive else num > limit) else 'low'
 
+    # Deficiency / insufficiency only (Vitamin D): good is above the highest bad limit.
+    if (
+        re.search(r'deficiency|insufficiency', range_text, re.I)
+        and not re.search(r'(?:normal|desirable|optimal|sufficient)\s*:', range_text, re.I)
+    ):
+        ceiling = None
+        for match in re.finditer(
+            r'(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)',
+            range_text,
+            re.I,
+        ):
+            high = _parse_number(match.group(2))
+            if high is not None:
+                ceiling = high if ceiling is None else max(ceiling, high)
+        for match in re.finditer(r'below\s*(-?\d+(?:\.\d+)?)', range_text, re.I):
+            high = _parse_number(match.group(1))
+            if high is not None:
+                ceiling = high if ceiling is None else max(ceiling, high)
+        if ceiling is not None:
+            return 'in' if num > ceiling else 'low'
+
     between = re.search(r'(-?\d+(?:\.\d+)?)\s*(?:-|–|—|to)\s*(-?\d+(?:\.\d+)?)', range_text, re.I)
     if between:
         low = _parse_number(between.group(1))
