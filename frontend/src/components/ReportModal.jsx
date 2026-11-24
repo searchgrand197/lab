@@ -343,13 +343,25 @@ function lipidFieldKey(name) {
  *   Total Lipids = 2×TC + TG
  *   Example: 200, 50, 150 → VLDL 30, LDL 120, ratios 4.00 / 2.40, NON-HDL 150, lipids 550
  */
-function applyCbcAutofill(results, values, changedId, rawValue) {
+function applyCbcAutofill(results, values, changedId, rawValue, lockedIds) {
   const list = results || []
   const changed = list.find((r) => r.id === changedId)
   let next = { ...values, [changedId]: rawValue }
   if (!changed) return { values: next, autofilledIds: [] }
   // Snapshot after applying the manual edit — anything else that changes is autofill.
   const afterManual = { ...next }
+  const locked = lockedIds || new Set()
+  const isLocked = (id) => (
+    String(id) === String(changedId)
+    || locked.has(id)
+    || locked.has(String(id))
+    || locked.has(Number(id))
+  )
+  // A value the user typed stays. Autofill only fills untouched fields.
+  const setCalc = (id, value) => {
+    if (isLocked(id)) return
+    next[id] = value
+  }
 
   // --- Haemoglobin → red-cell indices (same for Female & Male) ---
   if (isHaemoglobinParam(changed.name)) {
@@ -359,14 +371,14 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       if (r.id === changedId || !isHaemoglobinParam(r.name)) return
       const n = normalizeParamName(r.name)
       const otherIsGender = /\bfemale\b|\bmale\b/.test(n)
-      if (isGenderSpecific && !otherIsGender) next[r.id] = rawValue
+      if (isGenderSpecific && !otherIsGender) setCalc(r.id, rawValue)
     })
     const derived = calcCbcFromHb(parseNumber(rawValue))
     if (derived) {
       list.forEach((r) => {
         const key = cbcDerivedKey(r.name)
         if (!key || !derived[key]) return
-        next[r.id] = formatIndianNumber(derived[key])
+        setCalc(r.id, formatIndianNumber(derived[key]))
       })
     }
   }
@@ -388,7 +400,7 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     ;['monocytes', 'eosinophils', 'basophils'].forEach((key) => {
       const row = byDlc[key]
       if (!row) return
-      next[row.id] = dlcRest[key]
+      setCalc(row.id, dlcRest[key])
     })
   }
 
@@ -408,7 +420,7 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     list.forEach((r) => {
       const key = dlcAbsoluteKey(r.name)
       if (!key || pct[key] == null) return
-      next[r.id] = formatIndianNumber(String(Math.round((wbc * pct[key]) / 100)))
+      setCalc(r.id, formatIndianNumber(String(Math.round((wbc * pct[key]) / 100))))
     })
   }
 
@@ -430,11 +442,11 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       const protein = proteinRaw ?? 0
       const albumin = albuminRaw ?? 0
       const globulin = Number((protein - albumin).toFixed(2))
-      next[byProtein.globulin.id] = formatIndianNumber(globulin.toFixed(2))
+      setCalc(byProtein.globulin.id, formatIndianNumber(globulin.toFixed(2)))
       if (byProtein.ag_ratio && globulin !== 0) {
-        next[byProtein.ag_ratio.id] = formatIndianNumber((albumin / globulin).toFixed(2))
+        setCalc(byProtein.ag_ratio.id, formatIndianNumber((albumin / globulin).toFixed(2)))
       } else if (byProtein.ag_ratio && globulin === 0) {
-        next[byProtein.ag_ratio.id] = ''
+        setCalc(byProtein.ag_ratio.id, '')
       }
     }
   }
@@ -454,7 +466,7 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     )
     if (total != null && conjugated != null) {
       const unconjugated = Number((total - conjugated).toFixed(2))
-      next[byBili.unconjugated.id] = formatIndianNumber(unconjugated.toFixed(2))
+      setCalc(byBili.unconjugated.id, formatIndianNumber(unconjugated.toFixed(2)))
     }
   }
 
@@ -472,7 +484,7 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       byLiver.sgpt.id === changedId ? rawValue : next[byLiver.sgpt.id],
     )
     if (sgot != null && sgpt != null && sgpt !== 0) {
-      next[byLiver.ratio.id] = formatIndianNumber((sgot / sgpt).toFixed(2))
+      setCalc(byLiver.ratio.id, formatIndianNumber((sgot / sgpt).toFixed(2)))
     }
   }
 
@@ -492,19 +504,19 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
   const crea = readRenal('creatinine')
 
   // BUN from Urea (always refresh when urea is set)
-  if (byRenal.urea && byRenal.bun && urea != null) {
+  if (byRenal.urea && byRenal.bun && urea != null && !isLocked(byRenal.bun.id)) {
     bun = Number(((urea * 28) / 60).toFixed(2))
     next[byRenal.bun.id] = formatIndianNumber(bun.toFixed(2))
   }
 
   // BLOOD UREA NITROGEN / CREATININE RATIO = BUN ÷ Creatinine
   if (byRenal.bun_crea_ratio && bun != null && crea != null && crea !== 0) {
-    next[byRenal.bun_crea_ratio.id] = formatIndianNumber((bun / crea).toFixed(2))
+    setCalc(byRenal.bun_crea_ratio.id, formatIndianNumber((bun / crea).toFixed(2)))
   }
 
   // Short "Bun / Creatinine" = Urea ÷ Creatinine (reference software behaviour)
   if (byRenal.urea_crea_ratio && urea != null && crea != null && crea !== 0) {
-    next[byRenal.urea_crea_ratio.id] = formatIndianNumber((urea / crea).toFixed(2))
+    setCalc(byRenal.urea_crea_ratio.id, formatIndianNumber((urea / crea).toFixed(2)))
   }
 
   // --- HbA1c → Estimated Average Glucose ---
@@ -520,7 +532,7 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
     if (a1c != null) {
       // ADA formula: eAG (mg/dL) = 28.7 × A1c − 46.7
       const eag = Number((28.7 * a1c - 46.7).toFixed(2))
-      next[byA1c.eag.id] = formatIndianNumber(eag.toFixed(2))
+      setCalc(byA1c.eag.id, formatIndianNumber(eag.toFixed(2)))
     }
   }
 
@@ -547,12 +559,12 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       const isi = isiRaw != null && isiRaw > 0 ? isiRaw : 1
       const inr = Number((test / control) ** isi).toFixed(2)
 
-      if (byPt.index) next[byPt.index.id] = formatIndianNumber(index.toFixed(2))
-      if (byPt.pti) next[byPt.pti.id] = formatIndianNumber(pti.toFixed(2))
+      if (byPt.index) setCalc(byPt.index.id, formatIndianNumber(index.toFixed(2)))
+      if (byPt.pti) setCalc(byPt.pti.id, formatIndianNumber(pti.toFixed(2)))
       if (byPt.patient_ratio) {
-        next[byPt.patient_ratio.id] = formatIndianNumber(patientRatio.toFixed(2))
+        setCalc(byPt.patient_ratio.id, formatIndianNumber(patientRatio.toFixed(2)))
       }
-      if (byPt.inr) next[byPt.inr.id] = formatIndianNumber(String(inr))
+      if (byPt.inr) setCalc(byPt.inr.id, formatIndianNumber(String(inr)))
     }
   }
 
@@ -584,21 +596,21 @@ function applyCbcAutofill(results, values, changedId, rawValue) {
       const nonHdl = Number((tc - hdl).toFixed(2))
       const totalLipids = Number((2 * tc + tg).toFixed(2))
 
-      if (byLipid.vldl) next[byLipid.vldl.id] = formatIndianNumber(vldl.toFixed(2))
-      if (byLipid.ldl) next[byLipid.ldl.id] = formatIndianNumber(ldl.toFixed(2))
-      if (byLipid.non_hdl) next[byLipid.non_hdl.id] = formatIndianNumber(nonHdl.toFixed(2))
+      if (byLipid.vldl) setCalc(byLipid.vldl.id, formatIndianNumber(vldl.toFixed(2)))
+      if (byLipid.ldl) setCalc(byLipid.ldl.id, formatIndianNumber(ldl.toFixed(2)))
+      if (byLipid.non_hdl) setCalc(byLipid.non_hdl.id, formatIndianNumber(nonHdl.toFixed(2)))
       if (byLipid.total_lipids) {
-        next[byLipid.total_lipids.id] = formatIndianNumber(totalLipids.toFixed(2))
+        setCalc(byLipid.total_lipids.id, formatIndianNumber(totalLipids.toFixed(2)))
       }
       if (byLipid.tc_hdl_ratio) {
-        next[byLipid.tc_hdl_ratio.id] = hdl
+        setCalc(byLipid.tc_hdl_ratio.id, hdl
           ? formatIndianNumber((tc / hdl).toFixed(2))
-          : ''
+          : '')
       }
       if (byLipid.ldl_hdl_ratio) {
-        next[byLipid.ldl_hdl_ratio.id] = hdl
+        setCalc(byLipid.ldl_hdl_ratio.id, hdl
           ? formatIndianNumber((ldl / hdl).toFixed(2))
-          : ''
+          : '')
       }
     }
   }
@@ -716,14 +728,21 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
   const [autofilledIds, setAutofilledIds] = useState(() => new Set())
   const [status, setStatus] = useState('booked')
   const [dragIndex, setDragIndex] = useState(null)
+  const manualResultIdsRef = useRef(new Set())
 
   function applyResultChange(results, changedId, rawValue) {
     setValues((prev) => {
+      const previous = prev[changedId] ?? ''
+      if (String(rawValue) !== String(previous)) {
+        manualResultIdsRef.current.add(changedId)
+        manualResultIdsRef.current.add(String(changedId))
+      }
       const { values: next, autofilledIds: filled } = applyCbcAutofill(
         results,
         prev,
         changedId,
         rawValue,
+        manualResultIdsRef.current,
       )
       // Schedule after this updater so we don't nest setState calls.
       queueMicrotask(() => {
@@ -731,6 +750,10 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
           const nextFilled = new Set(prevFilled)
           nextFilled.delete(changedId)
           nextFilled.delete(String(changedId))
+          manualResultIdsRef.current.forEach((id) => {
+            nextFilled.delete(id)
+            nextFilled.delete(String(id))
+          })
           filled.forEach((id) => {
             nextFilled.add(id)
             nextFilled.add(String(id))
@@ -773,6 +796,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
     if (syncValues) {
       setValues(valuesFromBooking(detail))
       setAutofilledIds(new Set())
+      manualResultIdsRef.current = new Set()
     }
     // Keep accordions collapsed by default; only open a panel the user just added.
     if (preferOpenId) {
