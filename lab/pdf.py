@@ -42,12 +42,6 @@ HEADER_BG = colors.white
 GREEN = INK  # kept for any legacy refs; print uses black
 RED = INK
 
-# Match classic lab printouts (Times / Times New Roman serif).
-FONT = 'Times-Roman'
-FONT_BOLD = 'Times-Bold'
-FONT_ITALIC = 'Times-Italic'
-
-
 A4_W_MM = 210.0
 A4_H_MM = 297.0
 
