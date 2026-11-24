@@ -59,7 +59,7 @@ CATALOG = [
                     ('Absolute Monocyte Count', '* 10^9/L', '200 - 800', 'Calculated'),
                     ('Absolute Eosinophil Count', '* 10^9/L', '30 - 350', 'Calculated'),
                     ('Absolute Basophils Count', '* 10^9/L', '0 - 300', 'Calculated'),
-                    ('Platelet Count', '10^3/uL', '1.50 - 4.50', 'Impedance Measurement'),
+                    ('Platelet Count', 'lakhs/cumm', '1.50 - 4.50 Lakhs', 'Impedance Measurement'),
                     ('Platelet Large Cell Coefficient (P-LCC)', '', '', 'Calculated'),
                     ('Mean Platelet Volume (MPV)', 'fL', '6.50 - 12.00', 'Impedance Measurement'),
                     ('PCT', '%', '0.19 - 0.40', 'Calculated'),
