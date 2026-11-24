@@ -11,10 +11,8 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
-from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
-    Flowable,
     HRFlowable,
     KeepTogether,
     Paragraph,
@@ -28,56 +26,41 @@ from .models import PrintSettings
 
 
 class ActualSizeCanvas(pdfcanvas.Canvas):
-    """Ask PDF viewers / drivers to print at 100% (no fit-to-page scaling)."""
+    """Ask PDF viewers / drivers to print at 100% (no fit-to-page scaling).
+
+    Pages are buffered so we can stamp the authorized-signatory block on the
+    last page only — never on a wasted almost-empty trailing page.
+    """
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # Honoured by Adobe Reader, Edge, and many Windows print paths.
         self.setViewerPreference('PrintScaling', 'None')
+        self._saved_page_states = []
+        self._on_last_page = None
 
+    def showPage(self):
+        self._saved_page_states.append(dict(self.__dict__))
+        self._startPage()
 
-class TranslucentBand(Flowable):
-    """Draw a translucent filled rectangle, then the inner flowable on top.
-
-    Table BACKGROUND alpha is ignored by many PDF viewers; canvas fill opacity works.
-    """
-
-    def __init__(self, inner, fill_rgb=(0.82, 0.82, 0.82), alpha=0.55, stroke=True):
-        super().__init__()
-        self.inner = inner
-        self.fill_rgb = fill_rgb
-        self.alpha = alpha
-        self.stroke = stroke
-        self._width = 0
-        self._height = 0
-
-    def wrap(self, availWidth, availHeight):
-        self._width, self._height = self.inner.wrap(availWidth, availHeight)
-        return self._width, self._height
-
-    def draw(self):
-        c = self.canv
-        c.saveState()
-        c.setFillColorRGB(*self.fill_rgb)
-        if hasattr(c, 'setFillAlpha'):
-            c.setFillAlpha(self.alpha)
-        c.rect(0, 0, self._width, self._height, stroke=0, fill=1)
-        if self.stroke:
-            c.setStrokeColor(INK)
-            c.setLineWidth(0.7)
-            if hasattr(c, 'setStrokeAlpha'):
-                c.setStrokeAlpha(0.55)
-            c.rect(0, 0, self._width, self._height, stroke=1, fill=0)
-        c.restoreState()
-        self.inner.drawOn(c, 0, 0)
+    def save(self):
+        total = len(self._saved_page_states)
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            if self._pageNumber == total and callable(self._on_last_page):
+                self._on_last_page(self)
+            pdfcanvas.Canvas.showPage(self)
+        pdfcanvas.Canvas.save(self)
 
 
 # Pure B/W palette — colour printers are fine; mono printers stay crisp.
 INK = colors.black
 MUTED = colors.HexColor('#222222')
 LINE = colors.black
-# Patient card fill (opaque fallback; translucent drawn via TranslucentBand when wrapped).
-HEADER_BG = colors.Color(1, 1, 1, alpha=0.75)
+# Patient card: soft white so letterhead still peeks through.
+HEADER_BG = colors.Color(1, 1, 1, alpha=0.72)
+# Column titles (Test Description / Result / Unit / Range): translucent band.
+COL_HEADER_BG = colors.Color(0.88, 0.88, 0.88, alpha=0.45)
 GREEN = INK  # kept for any legacy refs; print uses black
 RED = INK
 
@@ -284,16 +267,6 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         textColor=INK,
         leading=12,
     )
-    param_method = ParagraphStyle(
-        'ParamMethod',
-        parent=styles['Normal'],
-        fontName='Times-Roman',
-        fontSize=7.5,
-        textColor=MUTED,
-        leading=9,
-        spaceBefore=0,
-        spaceAfter=0,
-    )
     result_normal = ParagraphStyle(
         'ResultNormal',
         parent=styles['Normal'],
@@ -351,8 +324,8 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         fontSize=10,
         textColor=INK,
         alignment=1,
-        spaceBefore=8,
-        spaceAfter=4,
+        spaceBefore=6,
+        spaceAfter=2,
     )
     sign_style = ParagraphStyle(
         'Sign',
@@ -401,19 +374,20 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         t.setStyle(
             TableStyle(
                 [
-                    # No Table BACKGROUND — translucent fill is drawn by TranslucentBand.
+                    ('BACKGROUND', (0, 0), (-1, 0), COL_HEADER_BG),
+                    ('BOX', (0, 0), (-1, 0), 0.6, colors.Color(0, 0, 0, alpha=0.35)),
                     ('LINEBELOW', (0, 0), (-1, 0), 1.25, LINE),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 3),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-                    ('TOPPADDING', (0, 0), (-1, -1), 4),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                    ('TOPPADDING', (0, 0), (-1, -1), 3.5),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 3.5),
                     ('ALIGN', (1, 0), (2, 0), 'CENTER'),
                     ('ALIGN', (3, 0), (3, 0), 'RIGHT'),
                 ]
             )
         )
-        return TranslucentBand(t, fill_rgb=(0.78, 0.78, 0.78), alpha=0.5, stroke=True)
+        return t
 
     def _widal_flowable(all_results):
         by_name = {r.parameter.name: r for r in all_results}
@@ -494,30 +468,15 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             method = resolve_param_method(param)
             name_text = xml_escape(param.name.upper())
             if method:
-                # Nested table keeps method on its own line (font tags are unreliable in some viewers).
-                name_cell = Table(
-                    [
-                        [Paragraph(name_text, param_name)],
-                        [Paragraph(f'({xml_escape(method)})', param_method)],
-                    ],
-                    colWidths=[col_desc],
-                )
-                name_cell.setStyle(
-                    TableStyle(
-                        [
-                            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-                            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-                            ('TOPPADDING', (0, 0), (-1, -1), 0),
-                            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-                            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                        ]
-                    )
+                name_para = Paragraph(
+                    f'{name_text}<br/><font size="7">({xml_escape(method)})</font>',
+                    param_name,
                 )
             else:
-                name_cell = Paragraph(name_text, param_name)
+                name_para = Paragraph(name_text, param_name)
             rows.append(
                 [
-                    name_cell,
+                    name_para,
                     result_para,
                     Paragraph((param.unit or '').upper(), unit_style),
                     Paragraph(param.reference_range or '', range_style),
@@ -532,30 +491,27 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         if not filled_results:
             return None
 
-        # Underline only under the title text (≈ half width), not full page.
-        title_text = bt.test.name.upper()
-        title_line_w = min(
-            max(stringWidth(title_text, 'Times-Bold', test_head.fontSize) + 8, content_w * 0.28),
-            content_w * 0.52,
+        title_table = Table(
+            [[Paragraph(bt.test.name.upper(), test_head), '', '', '']],
+            colWidths=col_widths,
         )
-        title_block = KeepTogether(
-            [
-                Spacer(1, 6),
-                Paragraph(title_text, test_head),
-                HRFlowable(
-                    width=title_line_w,
-                    thickness=0.9,
-                    color=LINE,
-                    spaceBefore=1,
-                    spaceAfter=4,
-                    hAlign='LEFT',
-                ),
-            ]
+        title_table.setStyle(
+            TableStyle(
+                [
+                    ('SPAN', (0, 0), (-1, 0)),
+                    ('LINEBELOW', (0, 0), (-1, 0), 0.8, LINE),
+                    ('TOPPADDING', (0, 0), (-1, 0), 8),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
+                    ('LEFTPADDING', (0, 0), (-1, 0), 3),
+                    ('RIGHTPADDING', (0, 0), (-1, 0), 3),
+                    ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
+                ]
+            )
         )
 
         if is_widal_test(bt.test):
             body = _widal_flowable(all_results)
-            return KeepTogether([title_block, body])
+            return KeepTogether([title_table, body])
 
         body_rows = _standard_param_rows(filled_results)
         body = Table(body_rows, colWidths=col_widths)
@@ -572,7 +528,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 ]
             )
         )
-        return KeepTogether([title_block, body])
+        return KeepTogether([title_table, body])
 
     def _build_patient_header():
         """Full 3-column header (patient / barcode+dates / QR) — same on every page."""
@@ -647,11 +603,11 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                     ('RIGHTPADDING', (0, 0), (-1, -1), 6),
                     ('TOPPADDING', (0, 0), (-1, -1), 6),
                     ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                    ('BACKGROUND', (0, 0), (-1, -1), HEADER_BG),
                 ]
             )
         )
-        # Soft white panel so letterhead shows through (table BACKGROUND alpha is ignored).
-        return TranslucentBand(header, fill_rgb=(1, 1, 1), alpha=0.78, stroke=False)
+        return header
 
     # Reserve vertical space so the same patient header can be drawn on every page.
     repeating_header_h = 0
@@ -676,25 +632,26 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         if block is not None:
             test_blocks.append(block)
 
-    story = []
-    if test_blocks:
-        # Keep test title with its body so it never sits alone on a page.
-        story.append(KeepTogether([_col_header_table(), test_blocks[0]]))
-        story.extend(test_blocks[1:])
-
-    # Keep closing block together so signatory never orphans onto a blank page.
-    # Spacer leaves room for a handwritten / stamp signature above the line.
-    story.append(
-        KeepTogether(
-            [
-                Paragraph('**** END OF REPORT ****', end_style),
-                HRFlowable(width='100%', thickness=1, color=LINE, spaceBefore=2, spaceAfter=4),
-                Spacer(1, 22),
-                Paragraph('____________________________', sign_style),
-                Paragraph('Authorized Signatory', sign_style),
-            ]
-        )
+    # Compact end marker only — signature is stamped on the last page via canvas
+    # so a tall KeepTogether cannot force a nearly blank extra page.
+    end_marker = KeepTogether(
+        [
+            Paragraph('**** END OF REPORT ****', end_style),
+            HRFlowable(width='100%', thickness=1, color=LINE, spaceBefore=2, spaceAfter=2),
+        ]
     )
+
+    story = []
+    if not test_blocks:
+        story.append(end_marker)
+    elif len(test_blocks) == 1:
+        # Keep column header + only test + end marker on the same page when possible.
+        story.append(KeepTogether([_col_header_table(), test_blocks[0], end_marker]))
+    else:
+        story.append(KeepTogether([_col_header_table(), test_blocks[0]]))
+        story.extend(test_blocks[1:-1])
+        # End marker travels with the last results — never alone on a new page.
+        story.append(KeepTogether([test_blocks[-1], end_marker]))
 
     bg_path = ''
     if draw_background and cfg.background_image:
@@ -754,11 +711,29 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             header.drawOn(canvas, layout['left'], y_cursor - hh)
         canvas.restoreState()
 
+    def _draw_last_page_signature(canv):
+        """Authorized signatory sits in the footer band on the last page only."""
+        plate_right = plate_w - layout['right_in_plate']
+        # Above the page-number / disclaimer line, still inside the footer plate.
+        y = plate_y + max(10 * mm, layout['footer_h'] * 0.55)
+        canv.saveState()
+        canv.setFillColor(INK)
+        canv.setStrokeColor(INK)
+        canv.setFont('Times-Roman', 9)
+        canv.drawRightString(plate_right, y + 11, '____________________________')
+        canv.drawRightString(plate_right, y, 'Authorized Signatory')
+        canv.restoreState()
+
+    def _canvas_maker(*args, **kwargs):
+        c = ActualSizeCanvas(*args, **kwargs)
+        c._on_last_page = _draw_last_page_signature
+        return c
+
     doc.build(
         story,
         onFirstPage=_page_chrome,
         onLaterPages=_page_chrome,
-        canvasmaker=ActualSizeCanvas,
+        canvasmaker=_canvas_maker,
     )
     pdf = buffer.getvalue()
     buffer.close()
