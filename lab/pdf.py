@@ -567,6 +567,15 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             body = _widal_flowable(all_results)
             return [KeepTogether([title_block, body])]
 
+        if re.search(r'complete blood|\bcbc\b', bt.test.name or '', re.I):
+            filled_results = [
+                r for r in filled_results
+                if re.sub(r'[^a-z0-9]+', ' ', (r.parameter.name or '').lower()).strip()
+                not in {'hemoglobin', 'haemoglobin'}
+            ]
+            if not filled_results:
+                return None
+
         body_rows = _standard_param_rows(filled_results)
         body = Table(body_rows, colWidths=col_widths)
         body.setStyle(

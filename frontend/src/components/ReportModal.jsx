@@ -94,6 +94,16 @@ function normalizeParamName(name) {
     .trim()
 }
 
+/** Old plain "Hemoglobin" row on CBC. Female, Male, and HAEMOGLOBIN (Hb) stay. */
+function isBareHemoglobinName(name) {
+  const n = normalizeParamName(name)
+  return n === 'hemoglobin' || n === 'haemoglobin'
+}
+
+function isCbcTestName(name) {
+  return /complete blood|\bcbc\b/i.test(String(name || ''))
+}
+
 /** True for any Hb entry field — Female, Male, or generic (not MCH / MCHC / A1c). */
 function isHaemoglobinParam(name) {
   const n = normalizeParamName(name)
@@ -1353,7 +1363,9 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {(entry.results || []).map((r) => {
+                                  {(entry.results || []).filter((r) => !(
+                                    isCbcTestName(entry.test?.name) && isBareHemoglobinName(r.name)
+                                  )).map((r) => {
                                     const current = values[r.id] ?? ''
                                     const rangeState = evaluateResultRange(current, r.reference_range)
                                     const outClass = rangeState === 'high' || rangeState === 'low' ? 'result-out-range' : ''
