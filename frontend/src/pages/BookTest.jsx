@@ -24,6 +24,22 @@ function nowLocal() {
 
 const PATIENT_TITLES = ['', 'Mr.', 'Mrs.', 'Ms.', 'Miss', 'Master', 'Dr.', 'Baby', 'B/O', 'Smt.', 'Shri']
 
+function doctorMatchKey(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/^\s*(dr\.?|doctor)\s+/, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function doctorMatchesQuery(doctor, query) {
+  const q = doctorMatchKey(query)
+  if (!q) return false
+  const name = doctorMatchKey(doctor.name)
+  const raw = String(doctor.name || '').toLowerCase()
+  return name.includes(q) || raw.includes(String(query).trim().toLowerCase())
+}
+
 function blankForm() {
   const now = nowLocal()
   return {
@@ -65,6 +81,9 @@ export default function BookTest() {
   const [saveState, setSaveState] = useState('')
   const [busy, setBusy] = useState(false)
   const [bookingId, setBookingId] = useState(null)
+  const [doctorQuery, setDoctorQuery] = useState('')
+  const [doctorFocused, setDoctorFocused] = useState(false)
+  const [debouncedDoctorQuery, setDebouncedDoctorQuery] = useState('')
   const [params] = useSearchParams()
   const navigate = useNavigate()
   const draftIdRef = useRef(null)
@@ -72,6 +91,20 @@ export default function BookTest() {
   const restoredRef = useRef(false)
   const latestRef = useRef({ form: blankForm(), tests: [] })
   latestRef.current = { form, tests: [...selectedTests] }
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedDoctorQuery(doctorQuery), 180)
+    return () => clearTimeout(timer)
+  }, [doctorQuery])
+
+  const selectedDoctor = doctors.find((d) => String(d.id) === String(form.doctor_id))
+  const doctorMatches = useMemo(() => {
+    const q = debouncedDoctorQuery.trim()
+    if (!doctorFocused || !q) return []
+    return doctors
+      .filter((d) => d.is_active !== false && doctorMatchesQuery(d, q))
+      .slice(0, 12)
+  }, [doctors, debouncedDoctorQuery, doctorFocused])
 
   useEffect(() => {
     let cancelled = false
@@ -466,17 +499,44 @@ export default function BookTest() {
                 </div>
                 <div className="field">
                   <label>Ref By (Doctor) *</label>
-                  <select
-                    className="field-input"
-                    required
-                    value={form.doctor_id}
-                    onChange={(e) => setField('doctor_id', e.target.value)}
-                  >
-                    <option value="">— Select doctor —</option>
-                    {doctors.filter((d) => d.is_active).map((d) => (
-                      <option key={d.id} value={d.id}>{d.name}</option>
-                    ))}
-                  </select>
+                  <div className="search-box doctor-search">
+                    <input
+                      className="field-input"
+                      placeholder="Type doctor name…"
+                      value={doctorFocused ? doctorQuery : (selectedDoctor?.name || '')}
+                      onFocus={() => {
+                        setDoctorFocused(true)
+                        setDoctorQuery(selectedDoctor?.name || doctorQuery)
+                      }}
+                      onBlur={() => setDoctorFocused(false)}
+                      onChange={(e) => {
+                        setDoctorQuery(e.target.value)
+                        if (form.doctor_id) setField('doctor_id', '')
+                      }}
+                      autoComplete="off"
+                    />
+                    {doctorFocused && debouncedDoctorQuery.trim() ? (
+                      <div className="search-results">
+                        {doctorMatches.length ? doctorMatches.map((d) => (
+                          <button
+                            key={d.id}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              setField('doctor_id', String(d.id))
+                              setDoctorQuery(d.name)
+                              setDoctorFocused(false)
+                            }}
+                          >
+                            <strong>{d.name}</strong>
+                            {d.specialization ? <span className="meta">{d.specialization}</span> : null}
+                          </button>
+                        )) : (
+                          <div className="doctor-search-empty">No doctor found</div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="field">
                   <label>Referral Source</label>
