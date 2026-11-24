@@ -11,6 +11,7 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfgen import canvas as pdfcanvas
 from reportlab.platypus import (
     Flowable,
@@ -531,27 +532,30 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         if not filled_results:
             return None
 
-        title_table = Table(
-            [[Paragraph(bt.test.name.upper(), test_head), '', '', '']],
-            colWidths=col_widths,
+        # Underline only under the title text (≈ half width), not full page.
+        title_text = bt.test.name.upper()
+        title_line_w = min(
+            max(stringWidth(title_text, 'Times-Bold', test_head.fontSize) + 8, content_w * 0.28),
+            content_w * 0.52,
         )
-        title_table.setStyle(
-            TableStyle(
-                [
-                    ('SPAN', (0, 0), (-1, 0)),
-                    ('LINEBELOW', (0, 0), (-1, 0), 0.8, LINE),
-                    ('TOPPADDING', (0, 0), (-1, 0), 8),
-                    ('BOTTOMPADDING', (0, 0), (-1, 0), 4),
-                    ('LEFTPADDING', (0, 0), (-1, 0), 3),
-                    ('RIGHTPADDING', (0, 0), (-1, 0), 3),
-                    ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
-                ]
-            )
+        title_block = KeepTogether(
+            [
+                Spacer(1, 6),
+                Paragraph(title_text, test_head),
+                HRFlowable(
+                    width=title_line_w,
+                    thickness=0.9,
+                    color=LINE,
+                    spaceBefore=1,
+                    spaceAfter=4,
+                    hAlign='LEFT',
+                ),
+            ]
         )
 
         if is_widal_test(bt.test):
             body = _widal_flowable(all_results)
-            return KeepTogether([title_table, body])
+            return KeepTogether([title_block, body])
 
         body_rows = _standard_param_rows(filled_results)
         body = Table(body_rows, colWidths=col_widths)
@@ -568,7 +572,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 ]
             )
         )
-        return KeepTogether([title_table, body])
+        return KeepTogether([title_block, body])
 
     def _build_patient_header():
         """Full 3-column header (patient / barcode+dates / QR) — same on every page."""
