@@ -42,11 +42,14 @@ class TestForm(forms.ModelForm):
 class TestParameterForm(forms.ModelForm):
     class Meta:
         model = TestParameter
-        fields = ['name', 'unit', 'reference_range', 'sort_order']
+        fields = ['name', 'unit', 'reference_range', 'method', 'sort_order']
         widgets = {
             'name': forms.TextInput(attrs={'class': 'field-input', 'placeholder': 'Parameter'}),
             'unit': forms.TextInput(attrs={'class': 'field-input', 'placeholder': 'Unit'}),
             'reference_range': forms.TextInput(attrs={'class': 'field-input', 'placeholder': 'e.g. 12-16'}),
+            'method': forms.TextInput(
+                attrs={'class': 'field-input', 'placeholder': 'e.g. VCSn Technology'}
+            ),
             'sort_order': forms.NumberInput(attrs={'class': 'field-input', 'min': '0'}),
         }
 

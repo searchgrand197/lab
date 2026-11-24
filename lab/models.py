@@ -125,6 +125,8 @@ class TestParameter(models.Model):
     name = models.CharField(max_length=120)
     unit = models.CharField(max_length=40, blank=True)
     reference_range = models.CharField(max_length=255, blank=True)
+    # Methodology shown under the parameter name on printed reports, e.g. "VCSn Technology"
+    method = models.CharField(max_length=120, blank=True, default='')
     sort_order = models.PositiveIntegerField(default=0)
 
     class Meta:

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { LabAPI } from '../api'
 
-const emptyParam = { name: '', unit: '', reference_range: '' }
+const emptyParam = { name: '', unit: '', reference_range: '', method: '' }
 const blank = { category_id: '', name: '', price: '0', parameters: [{ ...emptyParam }] }
 
 export default function Tests() {
@@ -62,6 +62,7 @@ export default function Tests() {
           name: p.name,
           unit: p.unit || '',
           reference_range: p.reference_range || '',
+          method: p.method || '',
         }))
         : [{ ...emptyParam }],
     })
@@ -221,6 +222,14 @@ export default function Tests() {
                   </div>
                   <div className="field span-2">
                     <input className="field-input" placeholder="Range" value={p.reference_range} onChange={(e) => setParam(idx, 'reference_range', e.target.value)} />
+                  </div>
+                  <div className="field span-2">
+                    <input
+                      className="field-input"
+                      placeholder="Method (e.g. VCSn Technology)"
+                      value={p.method || ''}
+                      onChange={(e) => setParam(idx, 'method', e.target.value)}
+                    />
                   </div>
                 </div>
               ))}

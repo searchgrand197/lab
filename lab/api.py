@@ -210,6 +210,7 @@ def _param_dict(param):
         'name': param.name,
         'unit': param.unit,
         'reference_range': param.reference_range,
+        'method': getattr(param, 'method', '') or '',
         'sort_order': param.sort_order,
     }
 
@@ -268,6 +269,7 @@ def _booking_dict(b, detail=False):
                             'name': r.parameter.name,
                             'unit': r.parameter.unit,
                             'reference_range': r.parameter.reference_range,
+                            'method': getattr(r.parameter, 'method', '') or '',
                             'value': r.value,
                         }
                         for r in bt.results.all()
@@ -647,6 +649,7 @@ def tests_api(request):
             name=(param.get('name') or '').strip(),
             unit=(param.get('unit') or '').strip(),
             reference_range=(param.get('reference_range') or '').strip(),
+            method=(param.get('method') or '').strip(),
             sort_order=param.get('sort_order', order),
         )
     return JsonResponse(_test_dict(test, include_params=True), status=201)
@@ -691,6 +694,7 @@ def test_detail_api(request, pk):
                     obj.name = (param.get('name') or obj.name).strip()
                     obj.unit = (param.get('unit') or '').strip()
                     obj.reference_range = (param.get('reference_range') or '').strip()
+                    obj.method = (param.get('method') or '').strip()
                     obj.sort_order = param.get('sort_order', order)
                     obj.save()
                     keep_ids.append(obj.id)
@@ -700,6 +704,7 @@ def test_detail_api(request, pk):
                 name=(param.get('name') or '').strip(),
                 unit=(param.get('unit') or '').strip(),
                 reference_range=(param.get('reference_range') or '').strip(),
+                method=(param.get('method') or '').strip(),
                 sort_order=param.get('sort_order', order),
             )
             keep_ids.append(obj.id)

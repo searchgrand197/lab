@@ -2,6 +2,7 @@ from io import BytesIO
 import re
 from datetime import datetime
 from pathlib import Path
+from xml.sax.saxutils import escape as xml_escape
 
 from django.conf import settings
 from django.utils import timezone
@@ -245,12 +246,6 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         textColor=INK,
         leading=11,
     )
-    param_name_alert = ParagraphStyle(
-        'ParamNameAlert',
-        parent=param_name,
-        fontName='Helvetica-Bold',
-        fontSize=9.5,
-    )
     result_normal = ParagraphStyle(
         'ResultNormal',
         parent=styles['Normal'],
@@ -263,7 +258,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     result_in = ParagraphStyle(
         'ResultIn',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
+        fontName='Helvetica',
         fontSize=9.5,
         textColor=INK,
         alignment=1,
@@ -272,11 +267,11 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     result_out = ParagraphStyle(
         'ResultOut',
         parent=styles['Normal'],
-        fontName='Helvetica-Bold',
-        fontSize=11,
+        fontName='Helvetica',
+        fontSize=9.5,
         textColor=INK,
         alignment=1,
-        leading=13,
+        leading=12,
     )
     unit_style = ParagraphStyle(
         'Unit',
@@ -432,24 +427,33 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         return inner
 
     def _standard_param_rows(filled_results):
+        from lab.param_methods import resolve_param_method
+
         rows = []
         for result in filled_results:
             param = result.parameter
             value = (result.value or '').strip()
             display_value = _format_indian_number(value)
             state = evaluate_result_range(value, param.reference_range)
-            if state == 'high':
-                result_para = Paragraph(f'<b>{display_value}&nbsp;&nbsp;H</b>', result_out)
-            elif state == 'low':
-                result_para = Paragraph(f'<b>{display_value}&nbsp;&nbsp;L</b>', result_out)
+            # No H/L markers; keep out-of-range readable without heavy bold.
+            if state in ('high', 'low'):
+                result_para = Paragraph(display_value, result_out)
             elif state == 'in':
-                result_para = Paragraph(f'<b>{display_value}</b>', result_in)
+                result_para = Paragraph(display_value, result_in)
             else:
                 result_para = Paragraph(display_value, result_normal)
-            name_style = param_name_alert if state in ('high', 'low') else param_name
+            method = resolve_param_method(param)
+            name_text = xml_escape(param.name.upper())
+            if method:
+                name_para = Paragraph(
+                    f'{name_text}<br/><font size="7">({xml_escape(method)})</font>',
+                    param_name,
+                )
+            else:
+                name_para = Paragraph(name_text, param_name)
             rows.append(
                 [
-                    Paragraph(param.name.upper(), name_style),
+                    name_para,
                     result_para,
                     Paragraph((param.unit or '').upper(), unit_style),
                     Paragraph(param.reference_range or '', range_style),
@@ -491,7 +495,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         body.setStyle(
             TableStyle(
                 [
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                     ('LEFTPADDING', (0, 0), (-1, -1), 3),
                     ('RIGHTPADDING', (0, 0), (-1, -1), 3),
                     ('TOPPADDING', (0, 0), (-1, -1), 3.5),
@@ -611,24 +615,6 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         story.append(KeepTogether([_col_header_table(), test_blocks[0]]))
         story.extend(test_blocks[1:])
 
-    legend = ParagraphStyle(
-        'Legend',
-        parent=styles['Normal'],
-        fontName='Helvetica',
-        fontSize=8,
-        textColor=INK,
-        alignment=0,
-        spaceBefore=4,
-        spaceAfter=0,
-        leading=10,
-    )
-    story.append(
-        Paragraph(
-            '<b>Key:</b>  <b>H</b> = High (above range) &nbsp;&nbsp; '
-            '<b>L</b> = Low (below range)',
-            legend,
-        )
-    )
     # Keep closing block together so signatory never orphans onto a blank page.
     # Spacer leaves room for a handwritten / stamp signature above the line.
     story.append(

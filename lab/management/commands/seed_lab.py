@@ -5,6 +5,7 @@ from decimal import Decimal
 
 from lab.catalog_data import CATALOG
 from lab.models import Category, Doctor, Package, Test, TestParameter, TestResult
+from lab.param_methods import unpack_param_tuple
 
 
 class Command(BaseCommand):
@@ -93,13 +94,15 @@ class Command(BaseCommand):
                         qs.delete()
                         old.delete()
 
-                for order, (name, unit, reference_range) in enumerate(test_data['parameters'], start=1):
+                for order, row in enumerate(test_data['parameters'], start=1):
+                    name, unit, reference_range, method = unpack_param_tuple(row)
                     param, created = TestParameter.objects.update_or_create(
                         test=test,
                         name=name,
                         defaults={
                             'unit': unit or '',
                             'reference_range': reference_range or '',
+                            'method': method or '',
                             'sort_order': order,
                         },
                     )
