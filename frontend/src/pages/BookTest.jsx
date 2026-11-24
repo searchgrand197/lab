@@ -91,13 +91,16 @@ export default function BookTest() {
   const creatingRef = useRef(false)
   const restoredRef = useRef(false)
   const bookingEpochRef = useRef(0)
+  const suppressPersistRef = useRef(false)
   const latestRef = useRef({ form: blankForm(), tests: [] })
   latestRef.current = { form, tests: [...selectedTests] }
 
   function startNewBooking() {
     bookingEpochRef.current += 1
+    suppressPersistRef.current = true
     draftIdRef.current = null
     creatingRef.current = false
+    restoredRef.current = true
     localStorage.removeItem(AUTOSAVE_KEY)
     setSelectedTests(new Set())
     setSelectedPackages(new Set())
@@ -222,6 +225,11 @@ export default function BookTest() {
   }, [params, location.state?.fresh])
 
   useEffect(() => {
+    if (suppressPersistRef.current) {
+      suppressPersistRef.current = false
+      localStorage.removeItem(AUTOSAVE_KEY)
+      return
+    }
     localStorage.setItem(
       AUTOSAVE_KEY,
       JSON.stringify({
@@ -287,7 +295,7 @@ export default function BookTest() {
 
   useEffect(() => {
     const patientId = params.get('patient')
-    if (!patientId) return undefined
+    if (!patientId || location.state?.fresh) return undefined
     let cancelled = false
     const epoch = bookingEpochRef.current
     LabAPI.patient(patientId)
@@ -299,7 +307,7 @@ export default function BookTest() {
     return () => {
       cancelled = true
     }
-  }, [params])
+  }, [params, location.state?.fresh])
 
   useEffect(() => {
     if (!query.trim()) {
@@ -688,6 +696,7 @@ export default function BookTest() {
           }}
           onCommitted={() => {
             startNewBooking()
+            navigate('/book', { replace: true, state: { fresh: Date.now() } })
           }}
         />
       ) : null}

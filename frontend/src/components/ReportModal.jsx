@@ -1042,7 +1042,6 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
       if (commit) {
         setStatus('completed')
         flashMessage('Report saved')
-        onCommitted?.()
       } else {
         flashMessage('Results saved')
       }
@@ -1056,10 +1055,11 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
   }
 
   async function saveAndPrint() {
+    const id = bookingId
     const ok = await saveAll({ commit: true })
     if (!ok) return
-    // Opens print helper; PDF requests Actual size (PrintScaling=None).
-    window.open(LabAPI.printUrl(bookingId), '_blank', 'noopener,noreferrer')
+    onCommitted?.()
+    window.open(LabAPI.printUrl(id), '_blank', 'noopener,noreferrer')
   }
 
   async function removeTest(testId) {

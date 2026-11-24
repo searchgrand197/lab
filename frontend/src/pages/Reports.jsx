@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { LabAPI } from '../api'
 import GreenLoader from '../components/GreenLoader'
 import Pagination from '../components/Pagination'
@@ -39,6 +39,7 @@ const blank = {
 }
 
 export default function Reports() {
+  const navigate = useNavigate()
   const [q, setQ] = useState('')
   const [dateFrom, setDateFrom] = useState(todayInput)
   const [dateTo, setDateTo] = useState(todayInput)
@@ -370,6 +371,10 @@ export default function Reports() {
           onClose={() => {
             setActiveId(null)
             load(q, dateFrom, dateTo, page).catch((err) => setError(err.message))
+          }}
+          onCommitted={() => {
+            setActiveId(null)
+            navigate('/book', { state: { fresh: Date.now() } })
           }}
         />
       ) : null}
