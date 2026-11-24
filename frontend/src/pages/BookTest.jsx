@@ -80,12 +80,7 @@ export default function BookTest() {
       try {
         const d = await LabAPI.doctors({ all: true, select: true })
         if (!cancelled) {
-          const list = d.results || []
-          setDoctors(list)
-          const defaultDoctor = list.find((doc) => doc.is_default && doc.is_active !== false)
-          if (defaultDoctor) {
-            setForm((f) => (f.doctor_id ? f : { ...f, doctor_id: String(defaultDoctor.id) }))
-          }
+          setDoctors(d.results || [])
         }
       } catch (err) {
         errors.push(err.message)
@@ -594,13 +589,7 @@ export default function BookTest() {
             setSelectedPackages(new Set())
             setQuery('')
             setSaveState('')
-            setForm((f) => {
-              const next = blankForm()
-              const defaultDoctor = doctors.find((doc) => doc.is_default && doc.is_active !== false)
-              if (defaultDoctor) next.doctor_id = String(defaultDoctor.id)
-              else if (f.doctor_id) next.doctor_id = f.doctor_id
-              return next
-            })
+            setForm(blankForm())
           }}
         />
       ) : null}
