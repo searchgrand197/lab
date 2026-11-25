@@ -478,7 +478,12 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
         )
         antigen_w = content_w * 0.38
         dil_w = (content_w - antigen_w) / len(WIDAL_COLS)
-        inner = Table(matrix, colWidths=[antigen_w] + [dil_w] * len(WIDAL_COLS))
+        inner = Table(
+            matrix,
+            colWidths=[antigen_w] + [dil_w] * len(WIDAL_COLS),
+            # Default long-table mode stops measuring early and can overstate height.
+            longTableOptimize=0,
+        )
         inner.setStyle(
             TableStyle(
                 [
@@ -565,7 +570,22 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
 
         if is_widal_test(bt.test):
             body = _widal_flowable(all_results)
-            return [KeepTogether([title_block, body])]
+            # One KeepTogether only. title_block is already a KeepTogether, and
+            # nesting those makes ReportLab treat the block as taller than the
+            # page, so Widal jumps to the next page and leaves a blank gap.
+            return [KeepTogether([
+                Spacer(1, 6),
+                Paragraph(title_text, test_head),
+                HRFlowable(
+                    width=title_line_w,
+                    thickness=0.9,
+                    color=LINE,
+                    spaceBefore=1,
+                    spaceAfter=4,
+                    hAlign='LEFT',
+                ),
+                body,
+            ])]
 
         if re.search(r'complete blood|\bcbc\b', bt.test.name or '', re.I):
             filled_results = [
@@ -577,7 +597,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
                 return None
 
         body_rows = _standard_param_rows(filled_results)
-        body = Table(body_rows, colWidths=col_widths)
+        body = Table(body_rows, colWidths=col_widths, longTableOptimize=0)
         body.setStyle(
             TableStyle(
                 [
