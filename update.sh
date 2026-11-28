@@ -140,13 +140,13 @@ snippet = """
         try_files $uri $uri/ /demo/index.html;
     }
 """
-    marker = "    location /api/"
-    if marker in text and "location /demo-api/" not in text:
-        text = text.replace(marker, snippet + "\n" + marker, 1)
-        path.write_text(text)
-        print("Inserted /demo and /demo-api nginx locations")
-    else:
-        print("Could not auto-patch nginx; add /demo locations manually")
+marker = "    location /api/"
+if marker in text and "location /demo-api/" not in text:
+    text = text.replace(marker, snippet + "\n" + marker, 1)
+    path.write_text(text)
+    print("Inserted /demo and /demo-api nginx locations")
+else:
+    print("Could not auto-patch nginx; add /demo locations manually")
 PY
   fi
   grep -n "demo\|root\|proxy_pass\|lab.intvice" "${NGINX_SITE}" | head -50 || true
