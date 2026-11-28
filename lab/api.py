@@ -919,7 +919,11 @@ def booking_detail_api(request, pk):
         if data.get('report_no'):
             booking.report_no = data['report_no']
         new_status = data.get('status')
-        if new_status in dict(Booking.STATUS_CHOICES):
+        # Autosave must never pull a finished report back to draft (race with Save and Print).
+        if (
+            new_status in dict(Booking.STATUS_CHOICES)
+            and not (booking.status == 'completed' and new_status == 'draft')
+        ):
             booking.status = new_status
         booking.save()
 
@@ -959,6 +963,13 @@ def booking_detail_api(request, pk):
         _apply_default_booking_test_order(booking)
         return JsonResponse(_booking_dict(booking, detail=True))
 
+    if action == 'complete':
+        booking.status = 'completed'
+        if not booking.report_ready_at:
+            booking.report_ready_at = timezone.now()
+        booking.save(update_fields=['status', 'report_ready_at', 'updated_at'])
+        return JsonResponse(_booking_dict(booking, detail=True))
+
     if action == 'save_results' and test_id:
         test = get_object_or_404(Test, pk=test_id)
         bt = _ensure_booking_test(booking, test)
@@ -970,10 +981,12 @@ def booking_detail_api(request, pk):
                 result.save(update_fields=['value'])
         status = data.get('status')
         if status in dict(Booking.STATUS_CHOICES):
-            booking.status = status
-            if status == 'completed' and not booking.report_ready_at:
-                booking.report_ready_at = timezone.now()
-            booking.save(update_fields=['status', 'report_ready_at', 'updated_at'])
+            # Late draft autosaves must not undo Save and Print.
+            if not (booking.status == 'completed' and status == 'draft'):
+                booking.status = status
+                if booking.status == 'completed' and not booking.report_ready_at:
+                    booking.report_ready_at = timezone.now()
+                booking.save(update_fields=['status', 'report_ready_at', 'updated_at'])
         return JsonResponse(_booking_dict(booking, detail=True))
 
     return JsonResponse({'error': 'Unknown action'}, status=400)

@@ -792,6 +792,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
   const [status, setStatus] = useState('booked')
   const [dragIndex, setDragIndex] = useState(null)
   const manualResultIdsRef = useRef(new Set())
+  const saveEpochRef = useRef(0)
 
   function applyResultChange(results, changedId, rawValue) {
     setValues((prev) => {
@@ -897,13 +898,16 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
     if (!dirtyRef.current) return undefined
     const snapshot = values
     const statusSnap = status
+    const epoch = saveEpochRef.current
     const handle = setTimeout(async () => {
+      if (epoch !== saveEpochRef.current) return
       const tests = bookingRef.current?.tests || []
       if (!tests.length) return
       const isDraft = (bookingRef.current?.status || 'draft') === 'draft'
       try {
         setSaveHint('Saving…')
         for (const entry of tests) {
+          if (epoch !== saveEpochRef.current) return
           const payload = {}
           ;(entry.results || []).forEach((r) => {
             payload[r.id] = snapshot[r.id] ?? ''
@@ -918,9 +922,11 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
           else body.status = 'draft'
           await LabAPI.updateBooking(bookingId, body)
         }
+        if (epoch !== saveEpochRef.current) return
         dirtyRef.current = false
         flashSaveHint(isDraft ? 'Draft saved' : 'Saved')
       } catch (err) {
+        if (epoch !== saveEpochRef.current) return
         setSaveHint('')
         setError(err.message)
       }
@@ -1028,14 +1034,18 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
     setBusy(true)
     setError('')
     setMessage('')
+    if (commit) saveEpochRef.current += 1
+    const epoch = saveEpochRef.current
     try {
       let detail = null
+      dirtyRef.current = false
       const nextStatus = commit
         ? 'completed'
         : (bookingRef.current?.status || 'draft') === 'draft'
           ? 'draft'
           : status
       for (const entry of selectedTests) {
+        if (commit && epoch !== saveEpochRef.current) return false
         const payload = {}
         ;(entry.results || []).forEach((r) => {
           payload[r.id] = values[r.id] ?? ''
@@ -1047,12 +1057,14 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
           results: payload,
         })
       }
-      dirtyRef.current = false
-      if (detail) applyBooking(detail, undefined, { syncValues: false })
       if (commit) {
+        // Final status write so a late draft autosave cannot leave it hidden.
+        detail = await LabAPI.updateBooking(bookingId, { action: 'complete' })
+        if (detail) applyBooking(detail, undefined, { syncValues: false })
         setStatus('completed')
         flashMessage('Report saved')
       } else {
+        if (detail) applyBooking(detail, undefined, { syncValues: false })
         flashMessage('Results saved')
       }
       return true

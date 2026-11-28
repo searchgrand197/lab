@@ -250,7 +250,6 @@ export default function BookTest() {
       setSaveState('Saving…')
       const body = {
         ...form,
-        status: 'draft',
         test_ids: [...selectedTests],
         age: form.age || null,
         doctor_id: form.doctor_id || null,
@@ -261,7 +260,7 @@ export default function BookTest() {
       try {
         if (!draftIdRef.current) {
           creatingRef.current = true
-          const booking = await LabAPI.createBooking(body)
+          const booking = await LabAPI.createBooking({ ...body, status: 'draft' })
           if (epoch !== bookingEpochRef.current) {
             creatingRef.current = false
             return
@@ -273,7 +272,6 @@ export default function BookTest() {
           if (latest.form !== form || latest.tests.join() !== [...selectedTests].join()) {
             const follow = {
               ...latest.form,
-              status: 'draft',
               test_ids: latest.tests,
               age: latest.form.age || null,
               doctor_id: latest.form.doctor_id || null,
@@ -281,6 +279,7 @@ export default function BookTest() {
             await LabAPI.updateBooking(booking.id, { action: 'autosave', ...follow })
           }
         } else {
+          // Do not send status here — a late draft write can undo Save and Print.
           await LabAPI.updateBooking(draftIdRef.current, { action: 'autosave', ...body })
         }
         if (epoch !== bookingEpochRef.current) return
@@ -413,7 +412,7 @@ export default function BookTest() {
     setBusy(true)
     setError('')
     try {
-      const body = { ...form, status: 'draft', test_ids: [...selectedTests] }
+      const body = { ...form, test_ids: [...selectedTests] }
       if (!body.age) body.age = null
       ;['dob', 'next_due_date', 'test_date', 'sample_collected_at', 'sample_received_at', 'report_ready_at'].forEach((k) => {
         if (!body[k]) body[k] = null
@@ -422,7 +421,7 @@ export default function BookTest() {
       if (id) {
         await LabAPI.updateBooking(id, { action: 'autosave', ...body })
       } else {
-        const booking = await LabAPI.createBooking(body)
+        const booking = await LabAPI.createBooking({ ...body, status: 'draft' })
         id = booking.id
       }
       draftIdRef.current = id
