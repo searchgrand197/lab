@@ -149,5 +149,18 @@ LOGOUT_REDIRECT_URL = 'accounts:login'
 
 LAB_NAME = 'Khalsa Clinical Laboratory'
 
+# Demo lead notification email (credentials from environment / VPS .env).
+EMAIL_HOST = _env('EMAIL_HOST', 'smtpout.secureserver.net')
+EMAIL_PORT = int(_env('EMAIL_PORT', '587') or '587')
+EMAIL_USE_TLS = _env('EMAIL_USE_TLS', 'True').lower() in ('1', 'true', 'yes', 'on')
+EMAIL_HOST_USER = _env('EMAIL_HOST_USER', 'support@intvice.com')
+EMAIL_HOST_PASSWORD = _env('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = _env(
+    'DEFAULT_FROM_EMAIL',
+    'Lab Software Demo <support@intvice.com>',
+)
+DEMO_LEAD_EMAIL_TO = _env('DEMO_LEAD_EMAIL_TO', 'support@intvice.com')
+DEMO_LEAD_EMAIL_CC = _env('DEMO_LEAD_EMAIL_CC', 'searchgrand@gmail.com')
+
 # Allow the mobile/report share page to embed the PDF in an iframe.
 X_FRAME_OPTIONS = 'SAMEORIGIN'

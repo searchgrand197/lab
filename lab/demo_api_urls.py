@@ -6,6 +6,7 @@ from . import api
 urlpatterns = [
     path('csrf/', api.csrf, name='demo_api_csrf'),
     path('me/', api.me, name='demo_api_me'),
+    path('enter/', api.demo_enter_api, name='demo_api_enter'),
     path('start/', api.demo_start_api, name='demo_api_start'),
     path('login/', api.login_api, name='demo_api_login'),
     path('logout/', api.logout_api, name='demo_api_logout'),

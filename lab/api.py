@@ -110,7 +110,47 @@ def _is_demo_request(request):
 
 
 def _demo_visitor_ok(request):
-    return bool(request.session.get('demo_visitor_id'))
+    return bool(request.session.get('demo_entered') or request.session.get('demo_visitor_id'))
+
+
+def _demo_user_payload(request):
+    return {
+        'id': request.session.get('demo_visitor_id') or 'guest',
+        'username': 'demo',
+        'name': request.session.get('demo_name') or '',
+        'mobile': request.session.get('demo_mobile') or '',
+        'lead_captured': bool(request.session.get('demo_mobile')),
+    }
+
+
+def _send_demo_lead_email(lead):
+    """Notify support when a demo visitor shares name/mobile."""
+    from django.conf import settings as dj_settings
+    from django.core.mail import EmailMessage
+
+    if not getattr(dj_settings, 'EMAIL_HOST_PASSWORD', ''):
+        return False
+    to_addr = (getattr(dj_settings, 'DEMO_LEAD_EMAIL_TO', '') or 'support@intvice.com').strip()
+    cc_raw = (getattr(dj_settings, 'DEMO_LEAD_EMAIL_CC', '') or '').strip()
+    cc_list = [p.strip() for p in cc_raw.split(',') if p.strip()]
+    seen = timezone.localtime(lead.last_seen_at).strftime('%d/%m/%Y %I:%M %p')
+    body = (
+        f'Demo Lab visitor details\n\n'
+        f'Name: {lead.name or "—"}\n'
+        f'Mobile: {lead.mobile}\n'
+        f'IP: {lead.ip_address or "—"}\n'
+        f'Time: {seen}\n'
+        f'User-Agent: {lead.user_agent or "—"}\n'
+    )
+    message = EmailMessage(
+        subject='Demo Lab data COllected',
+        body=body,
+        from_email=dj_settings.DEFAULT_FROM_EMAIL,
+        to=[to_addr],
+        cc=cc_list,
+    )
+    message.send(fail_silently=False)
+    return True
 
 
 def api_login_required(view):
@@ -364,12 +404,7 @@ def me(request):
             {
                 'authenticated': True,
                 'demo': True,
-                'user': {
-                    'id': request.session.get('demo_visitor_id'),
-                    'username': 'demo',
-                    'name': request.session.get('demo_name') or '',
-                    'mobile': request.session.get('demo_mobile') or '',
-                },
+                'user': _demo_user_payload(request),
             }
         )
     if not request.user.is_authenticated:
@@ -407,7 +442,14 @@ def login_api(request):
 @require_http_methods(['POST'])
 def logout_api(request):
     if _is_demo_request(request):
-        for key in ('demo_only', 'demo_visitor_id', 'demo_name', 'demo_mobile'):
+        for key in (
+            'demo_only',
+            'demo_entered',
+            'demo_visitor_id',
+            'demo_name',
+            'demo_mobile',
+            'demo_lead_emailed',
+        ):
             request.session.pop(key, None)
         return JsonResponse({'ok': True, 'demo': True})
     logout(request)
@@ -416,10 +458,31 @@ def logout_api(request):
 
 @ensure_csrf_cookie
 @require_http_methods(['POST'])
-def demo_start_api(request):
-    """Capture mobile on the live DB, then open a demo-only session."""
+def demo_enter_api(request):
+    """Open the demo app immediately (lead form comes later)."""
     if not _is_demo_request(request):
-        return JsonResponse({'error': 'Demo start is only available under /demo-api/.'}, status=400)
+        return JsonResponse({'error': 'Demo enter is only available under /demo-api/.'}, status=400)
+    if request.user.is_authenticated:
+        logout(request)
+    request.session['demo_only'] = True
+    request.session['demo_entered'] = True
+    if not request.session.get('demo_visitor_id'):
+        request.session['demo_visitor_id'] = 'guest'
+    get_token(request)
+    return JsonResponse({'ok': True, 'demo': True, 'user': _demo_user_payload(request)})
+
+
+@ensure_csrf_cookie
+@require_http_methods(['POST'])
+def demo_start_api(request):
+    """Save name/mobile on the live DB and email support (called from in-app prompt)."""
+    if not _is_demo_request(request):
+        return JsonResponse({'error': 'Demo lead capture is only available under /demo-api/.'}, status=400)
+    if not _demo_visitor_ok(request):
+        # Soft-enter if the prompt somehow fires first.
+        request.session['demo_only'] = True
+        request.session['demo_entered'] = True
+
     data = _body(request)
     mobile = _normalize_mobile(data.get('mobile'))
     name = (data.get('name') or '').strip()[:150]
@@ -428,6 +491,7 @@ def demo_start_api(request):
 
     # DemoLead always uses the production database (router + explicit .using).
     lead = DemoLead.objects.using('default').filter(mobile=mobile).order_by('-last_seen_at').first()
+    created = False
     if lead:
         if name:
             lead.name = name
@@ -445,30 +509,38 @@ def demo_start_api(request):
             user_agent=(request.META.get('HTTP_USER_AGENT') or '')[:400],
         )
         lead.save(using='default')
+        created = True
 
-    # Clear any live staff session so demo traffic cannot write via /api/.
     if request.user.is_authenticated:
         logout(request)
 
     request.session['demo_only'] = True
+    request.session['demo_entered'] = True
     request.session['demo_visitor_id'] = lead.id
     request.session['demo_name'] = lead.name
     request.session['demo_mobile'] = lead.mobile
-    request.session.cycle_key()
-    get_token(request)
 
-    return JsonResponse(
-        {
-            'ok': True,
-            'demo': True,
-            'user': {
-                'id': lead.id,
-                'username': 'demo',
-                'name': lead.name,
-                'mobile': lead.mobile,
-            },
-        }
-    )
+    emailed = False
+    email_error = ''
+    # Email on first capture for this session (and always for brand-new leads).
+    if created or not request.session.get('demo_lead_emailed'):
+        try:
+            emailed = bool(_send_demo_lead_email(lead))
+            if emailed:
+                request.session['demo_lead_emailed'] = True
+        except Exception as exc:  # noqa: BLE001 — surface mail failures without blocking demo
+            email_error = str(exc)
+
+    get_token(request)
+    payload = {
+        'ok': True,
+        'demo': True,
+        'emailed': emailed,
+        'user': _demo_user_payload(request),
+    }
+    if email_error:
+        payload['email_error'] = email_error
+    return JsonResponse(payload)
 
 
 @api_login_required

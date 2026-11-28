@@ -61,6 +61,34 @@ pip install -q --upgrade pip wheel
 pip install -q -r requirements.txt
 pip install -q gunicorn
 
+ENV_FILE="${APP_DIR}/.env"
+if [[ -f "${ENV_FILE}" ]]; then
+  echo "==> Ensure demo email settings in .env"
+  ensure_env_line() {
+    local key="$1"
+    local value="$2"
+    if ! grep -q "^${key}=" "${ENV_FILE}"; then
+      printf '%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
+      echo "  added ${key}"
+    fi
+  }
+  ensure_env_line EMAIL_HOST smtpout.secureserver.net
+  ensure_env_line EMAIL_PORT 587
+  ensure_env_line EMAIL_USE_TLS True
+  ensure_env_line EMAIL_HOST_USER support@intvice.com
+  # Password contains $ — keep single-quoted for bash/systemd.
+  if ! grep -q "^EMAIL_HOST_PASSWORD=" "${ENV_FILE}"; then
+    printf "%s\n" "EMAIL_HOST_PASSWORD='Nvn\$aroy001'" >> "${ENV_FILE}"
+    echo "  added EMAIL_HOST_PASSWORD"
+  fi
+  if ! grep -q "^DEFAULT_FROM_EMAIL=" "${ENV_FILE}"; then
+    printf "%s\n" "DEFAULT_FROM_EMAIL='Lab Software Demo <support@intvice.com>'" >> "${ENV_FILE}"
+    echo "  added DEFAULT_FROM_EMAIL"
+  fi
+  ensure_env_line DEMO_LEAD_EMAIL_TO support@intvice.com
+  ensure_env_line DEMO_LEAD_EMAIL_CC searchgrand@gmail.com
+fi
+
 echo "==> Django migrate / seed / static"
 python manage.py migrate --noinput
 python manage.py seed_lab || true

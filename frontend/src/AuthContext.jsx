@@ -9,6 +9,12 @@ const defaultAuth = {
   async login() {
     throw new Error('Auth is not ready')
   },
+  async enterDemo() {
+    throw new Error('Auth is not ready')
+  },
+  async saveDemoLead() {
+    throw new Error('Auth is not ready')
+  },
   async startDemo() {
     throw new Error('Auth is not ready')
   },
@@ -23,16 +29,20 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     let cancelled = false
-    AuthAPI.me()
-      .then((data) => {
-        if (!cancelled) setUser(data.authenticated ? data.user : null)
-      })
-      .catch(() => {
+    async function boot() {
+      try {
+        let data = await AuthAPI.me()
+        if (isDemoMode && !data.authenticated) {
+          data = await AuthAPI.enterDemo()
+        }
+        if (!cancelled) setUser(data.authenticated || data.ok ? data.user : null)
+      } catch {
         if (!cancelled) setUser(null)
-      })
-      .finally(() => {
+      } finally {
         if (!cancelled) setLoading(false)
-      })
+      }
+    }
+    boot()
     return () => {
       cancelled = true
     }
@@ -45,6 +55,16 @@ export function AuthProvider({ children }) {
       isDemo: isDemoMode,
       async login(username, password) {
         const data = await AuthAPI.login(username, password)
+        setUser(data.user)
+        return data.user
+      },
+      async enterDemo() {
+        const data = await AuthAPI.enterDemo()
+        setUser(data.user)
+        return data.user
+      },
+      async saveDemoLead(payload) {
+        const data = await AuthAPI.startDemo(payload)
         setUser(data.user)
         return data.user
       },

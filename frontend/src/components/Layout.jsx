@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
 import { isDemoMode } from '../demo'
+import DemoLeadPrompt from './DemoLeadPrompt'
 
 const allLinks = [
   { to: '/book', label: 'Book Test', short: 'B' },
@@ -76,6 +77,7 @@ export default function Layout() {
           <Outlet />
         </main>
       </div>
+      {isDemoMode ? <DemoLeadPrompt /> : null}
     </div>
   )
 }

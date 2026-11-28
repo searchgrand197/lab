@@ -139,6 +139,14 @@ ALLOWED_HOSTS=${DOMAIN},www.${DOMAIN},127.0.0.1,localhost
 CSRF_TRUSTED_ORIGINS=https://${DOMAIN},https://www.${DOMAIN},http://${DOMAIN},http://www.${DOMAIN}
 CORS_ALLOWED_ORIGINS=https://${DOMAIN},https://www.${DOMAIN}
 PUBLIC_BASE_URL=https://${DOMAIN}
+EMAIL_HOST=smtpout.secureserver.net
+EMAIL_PORT=587
+EMAIL_USE_TLS=True
+EMAIL_HOST_USER=support@intvice.com
+EMAIL_HOST_PASSWORD='Nvn\$aroy001'
+DEFAULT_FROM_EMAIL='Lab Software Demo <support@intvice.com>'
+DEMO_LEAD_EMAIL_TO=support@intvice.com
+DEMO_LEAD_EMAIL_CC=searchgrand@gmail.com
 EOF
   echo "==> Wrote ${ENV_FILE}"
 else

@@ -73,6 +73,13 @@ export const AuthAPI = {
     await ensureCsrf()
     return data
   },
+  enterDemo: async () => {
+    cachedCsrf = null
+    await ensureCsrf(true)
+    const data = await api('/enter/', { method: 'POST', body: {} })
+    await ensureCsrf()
+    return data
+  },
   startDemo: async (payload) => {
     cachedCsrf = null
     await ensureCsrf(true)

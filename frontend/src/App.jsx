@@ -4,7 +4,6 @@ import { AuthProvider, useAuth } from './AuthContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/Layout'
 import Login from './pages/Login'
-import DemoGate from './pages/DemoGate'
 import Patients from './pages/Patients'
 import BookTest from './pages/BookTest'
 import Doctors from './pages/Doctors'
@@ -22,14 +21,21 @@ function Protected({ children }) {
   return children
 }
 
+function DemoHome() {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="login-page"><div className="login-card">Starting demo…</div></div>
+  if (user) return <Navigate to="/book" replace />
+  return <div className="login-page"><div className="login-card">Starting demo…</div></div>
+}
+
 export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
         <BrowserRouter basename={routerBasename}>
           <Routes>
-            <Route path="/login" element={isDemoMode ? <DemoGate /> : <Login />} />
-            <Route path="/login/" element={isDemoMode ? <DemoGate /> : <Login />} />
+            <Route path="/login" element={isDemoMode ? <DemoHome /> : <Login />} />
+            <Route path="/login/" element={isDemoMode ? <DemoHome /> : <Login />} />
             <Route
               element={
                 <Protected>
