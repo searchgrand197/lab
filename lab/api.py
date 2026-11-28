@@ -14,10 +14,12 @@ from django.utils.dateparse import parse_date, parse_datetime
 from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.views.decorators.http import require_GET, require_http_methods
 
+from .db import use_demo_db
 from .models import (
     Booking,
     BookingTest,
     Category,
+    DemoLead,
     Doctor,
     Package,
     Patient,
@@ -103,14 +105,42 @@ def _paginate(qs, request, mapper, default_page_size=50):
     })
 
 
+def _is_demo_request(request):
+    return bool(getattr(request, 'is_demo_api', False) or use_demo_db())
+
+
+def _demo_visitor_ok(request):
+    return bool(request.session.get('demo_visitor_id'))
+
+
 def api_login_required(view):
     @wraps(view)
     def wrapper(request, *args, **kwargs):
+        # Demo try-out: session gate only (no password). Never accept that
+        # session on the live /api/ surface.
+        if _is_demo_request(request):
+            if not _demo_visitor_ok(request):
+                return JsonResponse({'error': 'Authentication required'}, status=401)
+            return view(request, *args, **kwargs)
+        if request.session.get('demo_only'):
+            return JsonResponse({'error': 'Authentication required'}, status=401)
         if not request.user.is_authenticated:
             return JsonResponse({'error': 'Authentication required'}, status=401)
         return view(request, *args, **kwargs)
 
     return wrapper
+
+
+def _client_ip(request):
+    forwarded = (request.META.get('HTTP_X_FORWARDED_FOR') or '').split(',')[0].strip()
+    return forwarded or request.META.get('REMOTE_ADDR') or None
+
+
+def _normalize_mobile(value):
+    digits = re.sub(r'\D+', '', str(value or ''))
+    if len(digits) < 10:
+        return ''
+    return digits[-10:] if len(digits) > 10 else digits
 
 
 def _body(request):
@@ -327,6 +357,21 @@ def csrf(request):
 
 @require_GET
 def me(request):
+    if _is_demo_request(request):
+        if not _demo_visitor_ok(request):
+            return JsonResponse({'authenticated': False, 'demo': True})
+        return JsonResponse(
+            {
+                'authenticated': True,
+                'demo': True,
+                'user': {
+                    'id': request.session.get('demo_visitor_id'),
+                    'username': 'demo',
+                    'name': request.session.get('demo_name') or '',
+                    'mobile': request.session.get('demo_mobile') or '',
+                },
+            }
+        )
     if not request.user.is_authenticated:
         return JsonResponse({'authenticated': False})
     return JsonResponse(
@@ -340,6 +385,11 @@ def me(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 def login_api(request):
+    if _is_demo_request(request):
+        return JsonResponse(
+            {'error': 'Use the demo mobile form to start. Password login is disabled here.'},
+            status=400,
+        )
     data = _body(request)
     username = (data.get('username') or '').strip()
     password = data.get('password') or ''
@@ -347,6 +397,8 @@ def login_api(request):
     if user is None:
         return JsonResponse({'error': 'Invalid username or password'}, status=400)
     login(request, user)
+    request.session.pop('demo_only', None)
+    request.session.pop('demo_visitor_id', None)
     get_token(request)  # ensure CSRF cookie for later API calls
     return JsonResponse({'ok': True, 'user': {'id': user.id, 'username': user.username}})
 
@@ -354,8 +406,69 @@ def login_api(request):
 @csrf_exempt
 @require_http_methods(['POST'])
 def logout_api(request):
+    if _is_demo_request(request):
+        for key in ('demo_only', 'demo_visitor_id', 'demo_name', 'demo_mobile'):
+            request.session.pop(key, None)
+        return JsonResponse({'ok': True, 'demo': True})
     logout(request)
     return JsonResponse({'ok': True})
+
+
+@ensure_csrf_cookie
+@require_http_methods(['POST'])
+def demo_start_api(request):
+    """Capture mobile on the live DB, then open a demo-only session."""
+    if not _is_demo_request(request):
+        return JsonResponse({'error': 'Demo start is only available under /demo-api/.'}, status=400)
+    data = _body(request)
+    mobile = _normalize_mobile(data.get('mobile'))
+    name = (data.get('name') or '').strip()[:150]
+    if not mobile:
+        return JsonResponse({'error': 'Enter a valid 10-digit mobile number.'}, status=400)
+
+    # DemoLead always uses the production database (router + explicit .using).
+    lead = DemoLead.objects.using('default').filter(mobile=mobile).order_by('-last_seen_at').first()
+    if lead:
+        if name:
+            lead.name = name
+        lead.ip_address = _client_ip(request)
+        lead.user_agent = (request.META.get('HTTP_USER_AGENT') or '')[:400]
+        lead.save(
+            using='default',
+            update_fields=['name', 'ip_address', 'user_agent', 'last_seen_at'],
+        )
+    else:
+        lead = DemoLead(
+            name=name,
+            mobile=mobile,
+            ip_address=_client_ip(request),
+            user_agent=(request.META.get('HTTP_USER_AGENT') or '')[:400],
+        )
+        lead.save(using='default')
+
+    # Clear any live staff session so demo traffic cannot write via /api/.
+    if request.user.is_authenticated:
+        logout(request)
+
+    request.session['demo_only'] = True
+    request.session['demo_visitor_id'] = lead.id
+    request.session['demo_name'] = lead.name
+    request.session['demo_mobile'] = lead.mobile
+    request.session.cycle_key()
+    get_token(request)
+
+    return JsonResponse(
+        {
+            'ok': True,
+            'demo': True,
+            'user': {
+                'id': lead.id,
+                'username': 'demo',
+                'name': lead.name,
+                'mobile': lead.mobile,
+            },
+        }
+    )
 
 
 @api_login_required

@@ -264,6 +264,26 @@ class TestResult(models.Model):
         return f'{self.parameter.name}: {self.value or "—"}'
 
 
+class DemoLead(models.Model):
+    """Visitor who opened the public /demo try-out (stored on the live DB only)."""
+
+    name = models.CharField(max_length=150, blank=True)
+    mobile = models.CharField(max_length=20, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    user_agent = models.CharField(max_length=400, blank=True)
+
+    class Meta:
+        ordering = ['-last_seen_at']
+        verbose_name = 'Demo lead'
+        verbose_name_plural = 'Demo leads'
+
+    def __str__(self):
+        label = self.name.strip() or 'Visitor'
+        return f'{label} ({self.mobile})'
+
+
 class PrintSettings(models.Model):
     """Singleton print layout for laboratory reports."""
 

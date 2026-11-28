@@ -1,3 +1,5 @@
+import { API_BASE } from './demo'
+
 function getCookie(name) {
   const match = document.cookie.match(new RegExp('(?:^|; )' + name.replace(/([.$?*|{}()[\]\\/+^])/g, '\\$1') + '=([^;]*)'))
   return match ? decodeURIComponent(match[1]) : null
@@ -10,7 +12,7 @@ async function ensureCsrf(force = false) {
     cachedCsrf = cachedCsrf || getCookie('csrftoken')
     return cachedCsrf
   }
-  const res = await fetch('/api/csrf/', { credentials: 'include' })
+  const res = await fetch(`${API_BASE}/csrf/`, { credentials: 'include' })
   const data = await res.json().catch(() => ({}))
   cachedCsrf = data.csrfToken || getCookie('csrftoken')
   return cachedCsrf
@@ -19,6 +21,7 @@ async function ensureCsrf(force = false) {
 export async function api(path, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
   const headers = { ...(options.headers || {}) }
+  const url = path.startsWith('http') ? path : `${API_BASE}${path}`
 
   if (method !== 'GET' && method !== 'HEAD') {
     const csrf = await ensureCsrf()
@@ -28,7 +31,7 @@ export async function api(path, options = {}) {
     }
   }
 
-  const res = await fetch(path, {
+  const res = await fetch(url, {
     credentials: 'include',
     ...options,
     headers,
@@ -63,14 +66,21 @@ export async function api(path, options = {}) {
 }
 
 export const AuthAPI = {
-  me: () => api('/api/me/'),
+  me: () => api('/me/'),
   login: async (username, password) => {
     cachedCsrf = null
-    const data = await api('/api/login/', { method: 'POST', body: { username, password } })
+    const data = await api('/login/', { method: 'POST', body: { username, password } })
     await ensureCsrf()
     return data
   },
-  logout: () => api('/api/logout/', { method: 'POST', body: {} }),
+  startDemo: async (payload) => {
+    cachedCsrf = null
+    await ensureCsrf(true)
+    const data = await api('/start/', { method: 'POST', body: payload })
+    await ensureCsrf()
+    return data
+  },
+  logout: () => api('/logout/', { method: 'POST', body: {} }),
 }
 
 function listParams(q = '', opts = {}) {
@@ -86,44 +96,44 @@ function listParams(q = '', opts = {}) {
 }
 
 export const LabAPI = {
-  patients: (q = '', opts = {}) => api(`/api/patients/?${listParams(q, opts)}`),
-  patient: (id) => api(`/api/patients/${id}/`),
-  createPatient: (payload) => api('/api/patients/', { method: 'POST', body: payload }),
-  updatePatient: (id, payload) => api(`/api/patients/${id}/`, { method: 'PUT', body: payload }),
-  deletePatient: (id) => api(`/api/patients/${id}/`, { method: 'DELETE' }),
-  doctors: (opts = {}) => api(`/api/doctors/?${listParams(opts.q || '', opts)}`),
-  createDoctor: (payload) => api('/api/doctors/', { method: 'POST', body: payload }),
-  updateDoctor: (id, payload) => api(`/api/doctors/${id}/`, { method: 'PUT', body: payload }),
-  deleteDoctor: (id) => api(`/api/doctors/${id}/`, { method: 'DELETE' }),
-  reorderDoctors: (orderedIds) => api('/api/doctors/reorder/', { method: 'POST', body: { ordered_ids: orderedIds } }),
-  categories: () => api('/api/categories/'),
-  createCategory: (payload) => api('/api/categories/', { method: 'POST', body: payload }),
-  updateCategory: (id, payload) => api(`/api/categories/${id}/`, { method: 'PUT', body: payload }),
-  deleteCategory: (id) => api(`/api/categories/${id}/`, { method: 'DELETE' }),
-  reorderCategories: (orderedIds) => api('/api/categories/reorder/', { method: 'POST', body: { ordered_ids: orderedIds } }),
-  catalog: () => api('/api/catalog/'),
-  packages: () => api('/api/packages/'),
-  createPackage: (payload) => api('/api/packages/', { method: 'POST', body: payload }),
-  updatePackage: (id, payload) => api(`/api/packages/${id}/`, { method: 'PUT', body: payload }),
-  deletePackage: (id) => api(`/api/packages/${id}/`, { method: 'DELETE' }),
-  tests: () => api('/api/tests/'),
-  createTest: (payload) => api('/api/tests/', { method: 'POST', body: payload }),
-  updateTest: (id, payload) => api(`/api/tests/${id}/`, { method: 'PUT', body: payload }),
-  deleteTest: (id) => api(`/api/tests/${id}/`, { method: 'DELETE' }),
-  reorderTests: (orderedIds) => api('/api/tests/reorder/', { method: 'POST', body: { ordered_ids: orderedIds } }),
-  bookings: (q = '', filters = {}) => api(`/api/bookings/?${listParams(q, filters)}`),
-  createBooking: (payload) => api('/api/bookings/', { method: 'POST', body: payload }),
+  patients: (q = '', opts = {}) => api(`/patients/?${listParams(q, opts)}`),
+  patient: (id) => api(`/patients/${id}/`),
+  createPatient: (payload) => api('/patients/', { method: 'POST', body: payload }),
+  updatePatient: (id, payload) => api(`/patients/${id}/`, { method: 'PUT', body: payload }),
+  deletePatient: (id) => api(`/patients/${id}/`, { method: 'DELETE' }),
+  doctors: (opts = {}) => api(`/doctors/?${listParams(opts.q || '', opts)}`),
+  createDoctor: (payload) => api('/doctors/', { method: 'POST', body: payload }),
+  updateDoctor: (id, payload) => api(`/doctors/${id}/`, { method: 'PUT', body: payload }),
+  deleteDoctor: (id) => api(`/doctors/${id}/`, { method: 'DELETE' }),
+  reorderDoctors: (orderedIds) => api('/doctors/reorder/', { method: 'POST', body: { ordered_ids: orderedIds } }),
+  categories: () => api('/categories/'),
+  createCategory: (payload) => api('/categories/', { method: 'POST', body: payload }),
+  updateCategory: (id, payload) => api(`/categories/${id}/`, { method: 'PUT', body: payload }),
+  deleteCategory: (id) => api(`/categories/${id}/`, { method: 'DELETE' }),
+  reorderCategories: (orderedIds) => api('/categories/reorder/', { method: 'POST', body: { ordered_ids: orderedIds } }),
+  catalog: () => api('/catalog/'),
+  packages: () => api('/packages/'),
+  createPackage: (payload) => api('/packages/', { method: 'POST', body: payload }),
+  updatePackage: (id, payload) => api(`/packages/${id}/`, { method: 'PUT', body: payload }),
+  deletePackage: (id) => api(`/packages/${id}/`, { method: 'DELETE' }),
+  tests: () => api('/tests/'),
+  createTest: (payload) => api('/tests/', { method: 'POST', body: payload }),
+  updateTest: (id, payload) => api(`/tests/${id}/`, { method: 'PUT', body: payload }),
+  deleteTest: (id) => api(`/tests/${id}/`, { method: 'DELETE' }),
+  reorderTests: (orderedIds) => api('/tests/reorder/', { method: 'POST', body: { ordered_ids: orderedIds } }),
+  bookings: (q = '', filters = {}) => api(`/bookings/?${listParams(q, filters)}`),
+  createBooking: (payload) => api('/bookings/', { method: 'POST', body: payload }),
   booking: (id, testId) =>
-    api(testId ? `/api/bookings/${id}/?test=${testId}` : `/api/bookings/${id}/`),
-  updateBooking: (id, payload) => api(`/api/bookings/${id}/`, { method: 'POST', body: payload }),
+    api(testId ? `/bookings/${id}/?test=${testId}` : `/bookings/${id}/`),
+  updateBooking: (id, payload) => api(`/bookings/${id}/`, { method: 'POST', body: payload }),
   deleteBooking: (id, deletionReason) =>
-    api(`/api/bookings/${id}/`, {
+    api(`/bookings/${id}/`, {
       method: 'DELETE',
       body: { deletion_reason: deletionReason },
     }),
-  pdfUrl: (id) => `/api/bookings/${id}/report.pdf`,
-  printUrl: (id) => `/api/bookings/${id}/print/`,
-  printSettings: () => api('/api/settings/print/'),
+  pdfUrl: (id) => `${API_BASE}/bookings/${id}/report.pdf`,
+  printUrl: (id) => `${API_BASE}/bookings/${id}/print/`,
+  printSettings: () => api('/settings/print/'),
   savePrintSettings: (payload, file) => {
     const body = new FormData()
     const keys = [
@@ -147,6 +157,6 @@ export const LabAPI = {
       body.append(key, typeof value === 'boolean' ? (value ? 'true' : 'false') : String(value))
     })
     if (file) body.append('background_image', file)
-    return api('/api/settings/print/', { method: 'POST', body })
+    return api('/settings/print/', { method: 'POST', body })
   },
 }

@@ -4,6 +4,7 @@ from .models import (
     Booking,
     BookingTest,
     Category,
+    DemoLead,
     Doctor,
     Package,
     Patient,
@@ -100,6 +101,14 @@ class BookingAdmin(admin.ModelAdmin):
 class TestResultAdmin(admin.ModelAdmin):
     list_display = ('parameter', 'value', 'booking_test')
     search_fields = ('parameter__name', 'booking_test__booking__report_no')
+
+
+@admin.register(DemoLead)
+class DemoLeadAdmin(admin.ModelAdmin):
+    list_display = ('mobile', 'name', 'created_at', 'last_seen_at', 'ip_address')
+    search_fields = ('mobile', 'name')
+    readonly_fields = ('created_at', 'last_seen_at', 'ip_address', 'user_agent')
+    ordering = ('-last_seen_at',)
 
 
 @admin.register(PrintSettings)

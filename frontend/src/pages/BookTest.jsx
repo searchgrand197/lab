@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { LabAPI } from '../api'
 import ReportModal from '../components/ReportModal'
+import { BOOK_AUTOSAVE_KEY } from '../demo'
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -65,7 +66,7 @@ function blankForm() {
   }
 }
 
-const AUTOSAVE_KEY = 'khalsa-book-autosave'
+const AUTOSAVE_KEY = BOOK_AUTOSAVE_KEY
 
 export default function BookTest() {
   const [form, setForm] = useState(() => blankForm())

@@ -1,10 +1,15 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { AuthAPI } from './api'
+import { isDemoMode } from './demo'
 
 const defaultAuth = {
   user: null,
   loading: true,
+  isDemo: isDemoMode,
   async login() {
+    throw new Error('Auth is not ready')
+  },
+  async startDemo() {
     throw new Error('Auth is not ready')
   },
   async logout() {},
@@ -37,8 +42,14 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       loading,
+      isDemo: isDemoMode,
       async login(username, password) {
         const data = await AuthAPI.login(username, password)
+        setUser(data.user)
+        return data.user
+      },
+      async startDemo(payload) {
+        const data = await AuthAPI.startDemo(payload)
         setUser(data.user)
         return data.user
       },

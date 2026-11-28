@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './AuthContext'
 import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import DemoGate from './pages/DemoGate'
 import Patients from './pages/Patients'
 import BookTest from './pages/BookTest'
 import Doctors from './pages/Doctors'
@@ -11,6 +12,7 @@ import Categories from './pages/Categories'
 import Packages from './pages/Packages'
 import Tests from './pages/Tests'
 import Reports from './pages/Reports'
+import { isDemoMode, routerBasename } from './demo'
 import './App.css'
 
 function Protected({ children }) {
@@ -24,10 +26,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <AuthProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={routerBasename}>
           <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/login/" element={<Login />} />
+            <Route path="/login" element={isDemoMode ? <DemoGate /> : <Login />} />
+            <Route path="/login/" element={isDemoMode ? <DemoGate /> : <Login />} />
             <Route
               element={
                 <Protected>
@@ -50,8 +52,12 @@ export default function App() {
               <Route path="/tests/" element={<Tests />} />
               <Route path="/reports" element={<Reports />} />
               <Route path="/reports/" element={<Reports />} />
-              <Route path="/settings" element={<Settings />} />
-              <Route path="/settings/" element={<Settings />} />
+              {!isDemoMode ? (
+                <>
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/settings/" element={<Settings />} />
+                </>
+              ) : null}
             </Route>
             <Route path="*" element={<Navigate to="/book" replace />} />
           </Routes>

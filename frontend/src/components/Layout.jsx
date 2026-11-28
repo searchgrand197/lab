@@ -1,7 +1,8 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../AuthContext'
+import { isDemoMode } from '../demo'
 
-const links = [
+const allLinks = [
   { to: '/book', label: 'Book Test', short: 'B' },
   { to: '/patients', label: 'All Patients', short: 'P' },
   { to: '/packages', label: 'Package', short: 'Pk' },
@@ -16,12 +17,19 @@ export default function Layout() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  const links = isDemoMode ? allLinks.filter((link) => link.to !== '/settings') : allLinks
+  const displayName = user?.name || user?.mobile || user?.username || 'U'
 
   return (
     <div className="app-shell">
       <aside className="sidebar auto-hide" aria-label="Main navigation">
         <div className="sidebar-brand" title="Khalsa Clinical Laboratory">K</div>
-        <p className="sidebar-lab">Khalsa Lab</p>
+        <p className="sidebar-lab">{isDemoMode ? 'Demo Lab' : 'Khalsa Lab'}</p>
+        {isDemoMode ? (
+          <p className="sidebar-lab" style={{ opacity: 0.75, fontSize: '0.7rem', marginTop: '-0.35rem' }}>
+            Separate from live data
+          </p>
+        ) : null}
         <nav className="sidebar-nav">
           {links.map((link) => (
             <NavLink
@@ -45,19 +53,19 @@ export default function Layout() {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <span className="sidebar-user" title={user?.username}>{user?.username?.[0]?.toUpperCase() || 'U'}</span>
-          <span className="nav-label sidebar-user-name">{user?.username}</span>
+          <span className="sidebar-user" title={displayName}>{String(displayName)[0]?.toUpperCase() || 'U'}</span>
+          <span className="nav-label sidebar-user-name">{displayName}</span>
           <button
             className="sidebar-logout"
             type="button"
-            title="Logout"
+            title={isDemoMode ? 'End demo' : 'Logout'}
             onClick={async () => {
               await logout()
               navigate('/login')
             }}
           >
             <span className="nav-short">↩</span>
-            <span className="nav-label">Logout</span>
+            <span className="nav-label">{isDemoMode ? 'End demo' : 'Logout'}</span>
           </button>
         </div>
       </aside>

@@ -40,7 +40,7 @@ git fetch origin --prune
 git checkout -B main origin/main
 git reset --hard origin/main
 # Keep runtime data; wipe stale build artifacts
-git clean -fd -e .venv -e .env -e db.sqlite3 -e media -e staticfiles -e logs -e frontend/node_modules
+git clean -fd -e .venv -e .env -e db.sqlite3 -e db_demo.sqlite3 -e media -e staticfiles -e logs -e frontend/node_modules -e frontend/demo
 
 HEAD_SHA="$(git rev-parse --short HEAD)"
 HEAD_MSG="$(git log -1 --pretty=%s)"
@@ -64,18 +64,25 @@ pip install -q gunicorn
 echo "==> Django migrate / seed / static"
 python manage.py migrate --noinput
 python manage.py seed_lab || true
+python manage.py migrate --database=demo --noinput || true
+python manage.py seed_demo || true
 mkdir -p media staticfiles logs static
 python manage.py collectstatic --noinput
 
 echo "==> Rebuild frontend (required — nginx serves frontend/dist)"
 cd "${APP_DIR}/frontend"
-rm -rf dist
+rm -rf dist demo
 rm -rf node_modules/.vite 2>/dev/null || true
 npm ci || npm install
 npm run build
+npm run build:demo
 
 if [[ ! -f "${APP_DIR}/frontend/dist/index.html" ]]; then
   echo "ERROR: frontend/dist/index.html missing after build"
+  exit 1
+fi
+if [[ ! -f "${APP_DIR}/frontend/demo/index.html" ]]; then
+  echo "ERROR: frontend/demo/index.html missing after demo build"
   exit 1
 fi
 
@@ -96,8 +103,8 @@ fi
 # Permissions so nginx (www-data) can read dist under /root
 if [[ "${APP_DIR}" == /root/* ]]; then
   chmod 711 /root
-  chmod -R a+rX "${APP_DIR}/frontend/dist" || true
-  chmod a+x "${APP_DIR}" "${APP_DIR}/frontend" "${APP_DIR}/frontend/dist" 2>/dev/null || true
+  chmod -R a+rX "${APP_DIR}/frontend/dist" "${APP_DIR}/frontend/demo" || true
+  chmod a+x "${APP_DIR}" "${APP_DIR}/frontend" "${APP_DIR}/frontend/dist" "${APP_DIR}/frontend/demo" 2>/dev/null || true
 fi
 
 cd "${APP_DIR}"
@@ -105,15 +112,44 @@ chown -R www-data:www-data "${APP_DIR}/media" "${APP_DIR}/staticfiles" "${APP_DI
 # Keep code readable; socket user needs traverse
 chmod 755 "${APP_DIR}" 2>/dev/null || true
 
-echo "==> Nginx site check"
-if [[ -f /etc/nginx/sites-enabled/lab ]]; then
-  grep -n "root\|proxy_pass\|lab.intvice" /etc/nginx/sites-enabled/lab | head -40 || true
-  NGINX_ROOT="$(grep -E '^\s*root\s+' /etc/nginx/sites-enabled/lab | head -1 | awk '{print $2}' | tr -d ';')"
-  echo "==> nginx root: ${NGINX_ROOT}"
-  if [[ -n "${NGINX_ROOT}" && "${NGINX_ROOT}" != "${APP_DIR}/frontend/dist" ]]; then
-    echo "WARN: nginx root is not ${APP_DIR}/frontend/dist"
-    echo "      Expected: root ${APP_DIR}/frontend/dist;"
+echo "==> Nginx site check / ensure /demo routes"
+NGINX_SITE="/etc/nginx/sites-available/lab"
+if [[ -f "${NGINX_SITE}" ]]; then
+  if ! grep -q 'location /demo-api/' "${NGINX_SITE}"; then
+    python3 - <<'PY'
+from pathlib import Path
+path = Path("/etc/nginx/sites-available/lab")
+text = path.read_text()
+snippet = """
+    location /demo-api/ {
+        proxy_pass http://lab_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 120s;
+    }
+
+    location = /demo {
+        return 301 /demo/;
+    }
+
+    location /demo/ {
+        root /root/lab/frontend;
+        try_files $uri $uri/ /demo/index.html;
+    }
+"""
+    marker = "    location /api/"
+    if marker in text and "location /demo-api/" not in text:
+        text = text.replace(marker, snippet + "\n" + marker, 1)
+        path.write_text(text)
+        print("Inserted /demo and /demo-api nginx locations")
+    else:
+        print("Could not auto-patch nginx; add /demo locations manually")
+PY
   fi
+  grep -n "demo\|root\|proxy_pass\|lab.intvice" "${NGINX_SITE}" | head -50 || true
 fi
 
 echo "==> Restart lab + nginx"
@@ -133,6 +169,7 @@ echo "============================================"
 echo " Updated to ${HEAD_SHA}"
 echo " Frontend: ${ASSET_JS}"
 echo " URL: https://lab.intvice.com"
+echo " Demo: https://lab.intvice.com/demo/"
 echo " Hard refresh: Ctrl+Shift+R"
 echo "============================================"
 echo "Verify from VPS:"

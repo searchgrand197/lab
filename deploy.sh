@@ -168,14 +168,21 @@ if ! npm run build; then
   npm install
   npm run build
 fi
+npm run build:demo
 if [[ ! -f "${FRONTEND_DIST}/index.html" ]]; then
   echo "Frontend build failed — missing ${FRONTEND_DIST}/index.html"
+  exit 1
+fi
+if [[ ! -f "${FRONTEND_DIR}/demo/index.html" ]]; then
+  echo "Demo frontend build failed — missing ${FRONTEND_DIR}/demo/index.html"
   exit 1
 fi
 
 echo "==> Django migrate + collectstatic"
 cd "${APP_DIR}"
 python manage.py migrate --noinput
+python manage.py migrate --database=demo --noinput
+python manage.py seed_demo || true
 python manage.py collectstatic --noinput
 
 if [[ "${SEED_DATA}" == "1" ]]; then
@@ -216,7 +223,7 @@ chmod 775 "${APP_DIR}"
 chmod 664 "${APP_DIR}/db.sqlite3" 2>/dev/null || true
 # Allow nginx to read frontend build under /root
 chmod 711 /root 2>/dev/null || true
-chmod -R a+rX "${APP_DIR}/frontend/dist" 2>/dev/null || true
+chmod -R a+rX "${APP_DIR}/frontend/dist" "${APP_DIR}/frontend/demo" 2>/dev/null || true
 
 echo "==> Writing Gunicorn systemd unit"
 cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
@@ -274,6 +281,16 @@ server {
         proxy_read_timeout 120s;
     }
 
+    location /demo-api/ {
+        proxy_pass http://${APP_NAME}_app;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 120s;
+    }
+
     location /r/ {
         proxy_pass http://${APP_NAME}_app;
         proxy_http_version 1.1;
@@ -302,6 +319,15 @@ server {
         alias ${APP_DIR}/media/;
         expires 7d;
         add_header Cache-Control "public";
+    }
+
+    location = /demo {
+        return 301 /demo/;
+    }
+
+    location /demo/ {
+        root ${APP_DIR}/frontend;
+        try_files \$uri \$uri/ /demo/index.html;
     }
 
     location / {
