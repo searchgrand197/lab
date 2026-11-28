@@ -144,7 +144,7 @@ EMAIL_PORT=587
 EMAIL_USE_TLS=True
 EMAIL_HOST_USER=support@intvice.com
 EMAIL_HOST_PASSWORD='Nvn\$aroy001'
-DEFAULT_FROM_EMAIL='Lab Software Demo <support@intvice.com>'
+DEFAULT_FROM_EMAIL="Goel's Dental Clinic <support@intvice.com>"
 DEMO_LEAD_EMAIL_TO=support@intvice.com
 DEMO_LEAD_EMAIL_CC=searchgrand@gmail.com
 EOF

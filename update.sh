@@ -82,7 +82,7 @@ if [[ -f "${ENV_FILE}" ]]; then
     echo "  added EMAIL_HOST_PASSWORD"
   fi
   if ! grep -q "^DEFAULT_FROM_EMAIL=" "${ENV_FILE}"; then
-    printf "%s\n" "DEFAULT_FROM_EMAIL='Lab Software Demo <support@intvice.com>'" >> "${ENV_FILE}"
+    printf "%s\n" "DEFAULT_FROM_EMAIL=\"Goel's Dental Clinic <support@intvice.com>\"" >> "${ENV_FILE}"
     echo "  added DEFAULT_FROM_EMAIL"
   fi
   ensure_env_line DEMO_LEAD_EMAIL_TO support@intvice.com

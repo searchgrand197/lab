@@ -157,7 +157,7 @@ EMAIL_HOST_USER = _env('EMAIL_HOST_USER', 'support@intvice.com')
 EMAIL_HOST_PASSWORD = _env('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = _env(
     'DEFAULT_FROM_EMAIL',
-    'Lab Software Demo <support@intvice.com>',
+    "Goel's Dental Clinic <support@intvice.com>",
 )
 DEMO_LEAD_EMAIL_TO = _env('DEMO_LEAD_EMAIL_TO', 'support@intvice.com')
 DEMO_LEAD_EMAIL_CC = _env('DEMO_LEAD_EMAIL_CC', 'searchgrand@gmail.com')
