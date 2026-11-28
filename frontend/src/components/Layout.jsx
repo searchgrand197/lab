@@ -23,7 +23,9 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar auto-hide" aria-label="Main navigation">
-        <div className="sidebar-brand" title="Khalsa Clinical Laboratory">K</div>
+        <div className="sidebar-brand" title={isDemoMode ? 'Lab Software Demo' : 'Khalsa Clinical Laboratory'}>
+          {isDemoMode ? 'D' : 'K'}
+        </div>
         <p className="sidebar-lab">{isDemoMode ? 'Demo Lab' : 'Khalsa Lab'}</p>
         {isDemoMode ? (
           <p className="sidebar-lab" style={{ opacity: 0.75, fontSize: '0.7rem', marginTop: '-0.35rem' }}>

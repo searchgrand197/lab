@@ -397,7 +397,14 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
     from lab.widal import cell_name as widal_cell_name
     from lab.widal import is_widal_test
 
-    lab_name = getattr(settings, 'LAB_NAME', 'Khalsa Clinical Laboratory')
+    from lab.db import use_demo_db
+
+    if use_demo_db():
+        lab_name = 'Demo Clinical Laboratory'
+        lab_footer = 'This is a computer-generated demo report.'
+    else:
+        lab_name = getattr(settings, 'LAB_NAME', 'Khalsa Clinical Laboratory')
+        lab_footer = f'This is a computer-generated report from {lab_name}.'
     share_url = report_share_url(booking, public_base_url=public_base_url or '')
     col_desc = content_w * 0.48
     col_result = content_w * 0.15
@@ -772,7 +779,7 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             canvas.drawCentredString(
                 mid_x,
                 footer_y + 4.2 * mm,
-                'This is a computer-generated report from Khalsa Clinical Laboratory.',
+                lab_footer,
             )
         canvas.setFont('Times-Roman', 8)
         canvas.drawString(layout['left'], footer_y, f'{booking.report_no or ""} · {patient.display_name}')

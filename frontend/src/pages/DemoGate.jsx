@@ -30,9 +30,9 @@ export default function DemoGate() {
     <div className="login-page">
       <form className="login-card" onSubmit={onSubmit}>
         <div className="mark">K</div>
-        <h1>Khalsa Lab Demo</h1>
+        <h1>Lab Software Demo</h1>
         <p className="tagline">
-          Try booking and printing with sample catalog data. This demo is separate from the live lab.
+          Try booking and printing with sample catalog data. This demo is separate from any live lab.
         </p>
         {error ? <div className="error-banner">{error}</div> : null}
         <div className="field" style={{ marginBottom: '0.85rem' }}>

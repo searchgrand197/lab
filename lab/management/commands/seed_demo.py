@@ -46,7 +46,7 @@ class Command(BaseCommand):
 
     def _seed_catalog(self):
         for name in [
-            'KHALSA',
+            'Demo Clinic',
             'Dr. Manir',
             'Dr. Monti',
             'Dr. Ravina',
@@ -54,6 +54,8 @@ class Command(BaseCommand):
             'Dr. Bijender',
         ]:
             Doctor.objects.get_or_create(name=name, defaults={'is_active': True})
+        # Drop old branded doctor if a previous seed created it.
+        Doctor.objects.filter(name__iexact='KHALSA').delete()
 
         for block in CATALOG:
             category, _ = Category.objects.get_or_create(
