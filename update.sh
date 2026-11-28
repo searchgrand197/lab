@@ -137,8 +137,12 @@ fi
 
 cd "${APP_DIR}"
 chown -R www-data:www-data "${APP_DIR}/media" "${APP_DIR}/staticfiles" "${APP_DIR}/logs" 2>/dev/null || true
-# Keep code readable; socket user needs traverse
-chmod 755 "${APP_DIR}" 2>/dev/null || true
+# Gunicorn (www-data) must write SQLite and create -journal/-wal beside the DB.
+# seed_demo runs as root and otherwise leaves db_demo.sqlite3 unwritable → demo POST 500s.
+chown www-data:www-data "${APP_DIR}/db.sqlite3" "${APP_DIR}/db_demo.sqlite3" 2>/dev/null || true
+chmod 664 "${APP_DIR}/db.sqlite3" "${APP_DIR}/db_demo.sqlite3" 2>/dev/null || true
+# Directory must be writable for SQLite temp files; also traversable for nginx.
+chmod 775 "${APP_DIR}" 2>/dev/null || true
 
 echo "==> Nginx site check / ensure /demo routes"
 NGINX_SITE="/etc/nginx/sites-available/lab"

@@ -228,7 +228,8 @@ chown -R root:root "${APP_DIR}/.git" 2>/dev/null || true
 chmod 640 "${ENV_FILE}"
 chown root:"${APP_USER}" "${ENV_FILE}"
 chmod 775 "${APP_DIR}"
-chmod 664 "${APP_DIR}/db.sqlite3" 2>/dev/null || true
+chmod 664 "${APP_DIR}/db.sqlite3" "${APP_DIR}/db_demo.sqlite3" 2>/dev/null || true
+chown "${APP_USER}:${APP_USER}" "${APP_DIR}/db.sqlite3" "${APP_DIR}/db_demo.sqlite3" 2>/dev/null || true
 # Allow nginx to read frontend build under /root
 chmod 711 /root 2>/dev/null || true
 chmod -R a+rX "${APP_DIR}/frontend/dist" "${APP_DIR}/frontend/demo" 2>/dev/null || true
