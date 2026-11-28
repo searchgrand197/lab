@@ -588,10 +588,18 @@ def build_report_pdf(booking, public_base_url=None, include_background=True):
             ])]
 
         if re.search(r'complete blood|\bcbc\b', bt.test.name or '', re.I):
+            hidden_hb = {
+                'hemoglobin',
+                'haemoglobin',
+                'haemoglobin female',
+                'haemoglobin male',
+                'hemoglobin female',
+                'hemoglobin male',
+            }
             filled_results = [
                 r for r in filled_results
                 if re.sub(r'[^a-z0-9]+', ' ', (r.parameter.name or '').lower()).strip()
-                not in {'hemoglobin', 'haemoglobin'}
+                not in hidden_hb
             ]
             if not filled_results:
                 return None

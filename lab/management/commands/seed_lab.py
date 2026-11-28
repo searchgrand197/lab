@@ -86,14 +86,21 @@ class Command(BaseCommand):
                 # Remove unused old parameters (safe refresh).
                 # Also drop orphan params that only have blank result rows (e.g. old Widal titres).
                 keep_names = {p[0] for p in test_data['parameters']}
-                # Old bare "Hemoglobin" on CBC is a duplicate of HAEMOGLOBIN (Hb) /
-                # Female / Male. Remove it even when a result was typed. Those
-                # remaining haemoglobin fields still drive RBC, PCV, MCV, MCH, MCHC.
+                # CBC keeps only HAEMOGLOBIN (Hb). Drop bare Hemoglobin and the
+                # old Female / Male rows even when a result was typed.
                 if test.name == 'Complete Blood Count (CBC)':
+                    drop_exact = {
+                        'hemoglobin',
+                        'haemoglobin',
+                        'haemoglobin (female)',
+                        'haemoglobin (male)',
+                        'hemoglobin (female)',
+                        'hemoglobin (male)',
+                    }
                     for old in list(test.parameters.all()):
                         if old.name in keep_names:
                             continue
-                        if old.name.strip().lower() not in {'hemoglobin', 'haemoglobin'}:
+                        if old.name.strip().lower() not in drop_exact:
                             continue
                         TestResult.objects.filter(parameter=old).delete()
                         old.delete()

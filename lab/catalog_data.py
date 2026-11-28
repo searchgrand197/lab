@@ -38,8 +38,6 @@ CATALOG = [
                 'name': 'Complete Blood Count (CBC)',
                 'price': Decimal('350.00'),
                 'parameters': [
-                    ('Haemoglobin (Female)', 'gm/dl', '11.0-14.0 (Female)', 'Cynmeth Photometric Measurement'),
-                    ('Haemoglobin (Male)', 'gm/dl', '12.0-15.0 (Male)', 'Cynmeth Photometric Measurement'),
                     ('HAEMOGLOBIN (Hb)', 'gm/dL', '12.0-16.0', 'Cynmeth Photometric Measurement'),
                     ('Total Leucocytes (WBC) Count', 'cell/cu.mm', '4000 - 11000', 'Whole Blood EDTA Flow Cytometry'),
                     ('Neutrophils', '%', '50.00-70.00', 'VCSn Technology'),

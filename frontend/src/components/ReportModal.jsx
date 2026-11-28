@@ -94,10 +94,17 @@ function normalizeParamName(name) {
     .trim()
 }
 
-/** Old plain "Hemoglobin" row on CBC. Female, Male, and HAEMOGLOBIN (Hb) stay. */
-function isBareHemoglobinName(name) {
+/** Extra CBC Hb rows to hide. Only HAEMOGLOBIN (Hb) is kept. */
+function isHiddenCbcHemoglobinName(name) {
   const n = normalizeParamName(name)
-  return n === 'hemoglobin' || n === 'haemoglobin'
+  return (
+    n === 'hemoglobin'
+    || n === 'haemoglobin'
+    || n === 'haemoglobin female'
+    || n === 'haemoglobin male'
+    || n === 'hemoglobin female'
+    || n === 'hemoglobin male'
+  )
 }
 
 function isCbcTestName(name) {
@@ -1376,7 +1383,7 @@ export default function ReportModal({ bookingId, onClose, onCommitted }) {
                                 </thead>
                                 <tbody>
                                   {(entry.results || []).filter((r) => !(
-                                    isCbcTestName(entry.test?.name) && isBareHemoglobinName(r.name)
+                                    isCbcTestName(entry.test?.name) && isHiddenCbcHemoglobinName(r.name)
                                   )).map((r) => {
                                     const current = values[r.id] ?? ''
                                     const rangeState = evaluateResultRange(current, r.reference_range)
