@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { LabAPI } from '../api'
 import ReportModal from '../components/ReportModal'
-import { BOOK_AUTOSAVE_KEY } from '../demo'
+import { BOOK_AUTOSAVE_KEY, isDemoMode } from '../demo'
 
 function pad2(n) {
   return String(n).padStart(2, '0')
@@ -400,12 +400,29 @@ export default function BookTest() {
     [flatTests, selectedTests],
   )
 
+  async function resolveDoctorId() {
+    if (form.doctor_id) return form.doctor_id
+    const typed = doctorQuery.trim()
+    if (!typed) return ''
+    const existing = doctors.find(
+      (d) => d.is_active !== false && doctorMatchKey(d.name) === doctorMatchKey(typed),
+    )
+    if (existing) {
+      setField('doctor_id', String(existing.id))
+      setDoctorQuery(existing.name)
+      return String(existing.id)
+    }
+    if (!isDemoMode) return ''
+    // Demo: accept any typed name by creating that doctor in the isolated DB.
+    const created = await LabAPI.createDoctor({ name: typed, is_active: true })
+    setDoctors((prev) => [...prev, created])
+    setField('doctor_id', String(created.id))
+    setDoctorQuery(created.name)
+    return String(created.id)
+  }
+
   async function onSubmit(e) {
     e.preventDefault()
-    if (!form.doctor_id) {
-      setError('Ref By (Doctor) is required.')
-      return
-    }
     if (!selectedTests.size) {
       setError('Select at least one test or package.')
       return
@@ -413,7 +430,13 @@ export default function BookTest() {
     setBusy(true)
     setError('')
     try {
-      const body = { ...form, test_ids: [...selectedTests] }
+      const doctorId = await resolveDoctorId()
+      if (!isDemoMode && !doctorId) {
+        setError('Ref By (Doctor) is required.')
+        setBusy(false)
+        return
+      }
+      const body = { ...form, doctor_id: doctorId || null, test_ids: [...selectedTests] }
       if (!body.age) body.age = null
       ;['dob', 'next_due_date', 'test_date', 'sample_collected_at', 'sample_received_at', 'report_ready_at'].forEach((k) => {
         if (!body[k]) body[k] = null
@@ -552,11 +575,11 @@ export default function BookTest() {
                   <input className="field-input" type="date" value={form.dob} onChange={(e) => setField('dob', e.target.value)} />
                 </div>
                 <div className="field">
-                  <label>Ref By (Doctor) *</label>
+                  <label>Ref By (Doctor){isDemoMode ? '' : ' *'}</label>
                   <div className="search-box doctor-search">
                     <input
                       className="field-input"
-                      placeholder="Type doctor name…"
+                      placeholder={isDemoMode ? 'Type any name (optional)…' : 'Type doctor name…'}
                       value={doctorQuery}
                       onFocus={() => setDoctorOpen(true)}
                       onBlur={() => setDoctorOpen(false)}
@@ -584,7 +607,9 @@ export default function BookTest() {
                             {d.specialization ? <span className="meta">{d.specialization}</span> : null}
                           </button>
                         )) : (
-                          <div className="doctor-search-empty">No doctor found</div>
+                          <div className="doctor-search-empty">
+                            {isDemoMode ? 'No match — typed name will be used' : 'No doctor found'}
+                          </div>
                         )}
                       </div>
                     ) : null}
